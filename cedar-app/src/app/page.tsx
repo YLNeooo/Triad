@@ -1,6 +1,7 @@
-// app/page.tsx
+// src/app/page.tsx
 "use client";
 import { FloatingCedarChat } from "../cedar/components/chatComponents/FloatingCedarChat";
+
 export default function Page() {
   return (
     <main className="p-8">
