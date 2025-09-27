@@ -4,6 +4,8 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import TriadBackground from "@/cedar/components/backgrounds/Background";
 import GlassButton from "@/components/glassButton"; // ✅ adjust path if needed
+import { useAuth } from "../FirebaseAuthProvider";
+
 
 export default function BoardingIntroPage() {
   const router = useRouter();

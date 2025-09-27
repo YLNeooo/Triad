@@ -2,6 +2,10 @@
 import React from "react";
 import styles from "./page.module.css";
 import TriadBackground from "@/cedar/components/backgrounds/Background";
+import { useAuth } from "../../FirebaseAuthProvider";
+import { useRouter } from "next/navigation";
+import { db } from "@/lib/firebase/client";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
 /** ---------- Data Types ---------- */
 type Side = {
@@ -101,6 +105,8 @@ const MBTI_NOTES: NotePair[] = [
 
 /** ---------- Page ---------- */
 export default function BoardingPage() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
   const [isFirst, setIsFirst] = React.useState<boolean[]>(
     () => MBTI_NOTES.map(() => true) // default to E, S, T, J
   );
@@ -114,7 +120,7 @@ export default function BoardingPage() {
     });
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (saving) return;
     setSaving(true);
 
@@ -134,14 +140,39 @@ export default function BoardingPage() {
     });
 
     try {
+      // still keep local backup if you want
       localStorage.setItem("mbti", letters);
       localStorage.setItem("mbtiDetail", JSON.stringify(detail));
 
+      // must be signed in to write to Firestore
+      if (!user) {
+        alert("Please sign in to save your MBTI.");
+        router.push("/login");
+        return;
+      }
+
+      // upsert into users/{uid}
+      await setDoc(
+        doc(db, "users", user.uid),
+        {
+          mbti: letters,
+          mbtiDetail: detail,      // array of { dimension, chosen, other }
+          mbtiUpdatedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      // notify in-app can delete
       window.dispatchEvent(
         new CustomEvent("mbti:selected", { detail: { mbti: letters, detail } })
       );
 
       alert(`Saved your MBTI: ${letters}`);
+      // router.push("/welcome");
+    } catch (e) {
+      console.error("Failed to save MBTI:", e);
+      alert("Failed to save MBTI. Please try again.");
     } finally {
       setSaving(false);
     }
