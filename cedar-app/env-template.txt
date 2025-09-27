@@ -1,0 +1,16 @@
+# OpenAI API Configuration
+# Get your API key from: https://platform.openai.com/api-keys
+
+# Server-side API key (for /api routes)
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Client-side API key (for Cedar components)
+NEXT_PUBLIC_OPENAI_API_KEY=your_openai_api_key_here
+
+# Note: You can use the same API key for both, but they need to be set separately
+# in Next.js for security reasons (server vs client environment variables)
+
+# Instructions:
+# 1. Copy this file to .env.local
+# 2. Replace 'your_openai_api_key_here' with your actual OpenAI API key
+# 3. Restart the development server
