@@ -51,7 +51,7 @@ export default function LoginPage() {
     <TriadBackground className="min-h-screen flex items-center justify-center">
       <main className="w-full max-w-sm mx-auto p-8 space-y-8">
         {/* LOGIN Title */}
-        <h1 className="text-center text-4xl font-serif text-white tracking-wide">
+        <h1 className="text-center text-4xl text-white tracking-wide">
           LOGIN
         </h1>
 
