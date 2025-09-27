@@ -4,10 +4,29 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { auth, googleProvider } from "@/lib/firebase/client";
+import { auth, googleProvider, db } from "@/lib/firebase/client";
 import { createUserWithEmailAndPassword, signInWithPopup } from "firebase/auth";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { useAuth } from "../FirebaseAuthProvider";
 import { TriadBackground } from "@/cedar/components/backgrounds/Background";
+
+async function upsertUserDoc(params: {
+  uid: string;
+  email?: string | null;
+  displayName?: string | null;
+}) {
+  const { uid, email, displayName } = params;
+  await setDoc(
+    doc(db, "users", uid),
+    {
+      email: email ?? null,
+      displayName: displayName ?? null,
+      updatedAt: serverTimestamp(),
+      createdAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
 
 export default function SignupPage() {
   const router = useRouter();
@@ -23,9 +42,12 @@ export default function SignupPage() {
 
   async function onEmailSignup(e: React.FormEvent) {
     e.preventDefault();
-    setErr(null); setBusy(true);
+    setErr(null);
+    setBusy(true);
     try {
-      await createUserWithEmailAndPassword(auth, email, password);
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      const u = cred.user;
+      await upsertUserDoc({ uid: u.uid, email: u.email, displayName: u.displayName });
       router.push("/welcome");
     } catch (e: any) {
       setErr(e?.message || "Failed to create account");
@@ -38,7 +60,9 @@ export default function SignupPage() {
     setErr(null);
     setBusy(true);
     try {
-      await signInWithPopup(auth, googleProvider);
+      const cred = await signInWithPopup(auth, googleProvider);
+      const u = cred.user;
+      await upsertUserDoc({ uid: u.uid, email: u.email, displayName: u.displayName });
       router.push("/welcome");
     } catch (e: any) {
       setErr(e?.message || "Google sign-in failed");
@@ -50,18 +74,15 @@ export default function SignupPage() {
   return (
     <TriadBackground className="min-h-screen flex items-center justify-center">
       <main className="w-full max-w-sm mx-auto p-8 space-y-8">
-        {}
-        <h1 className="text-center text-4xl text-white tracking-wide">
-          CREATE ACCOUNT
-        </h1>
+        <h1 className="text-center text-4xl text-white tracking-wide">CREATE ACCOUNT</h1>
 
         {/* Signup Form */}
         <form onSubmit={onEmailSignup} className="space-y-6">
-          {/* Email Input */}
+          {/* Email Input (solid white) */}
           <div className="relative">
             <input
               type="email"
-              className="w-full h-14 px-6 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white placeholder-white/80 focus:outline-none focus:ring-2 focus:ring-white/50 focus:border-transparent transition-all duration-200"
+              className="w-full h-14 px-6 rounded-full bg-white text-gray-900 placeholder-gray-500 border border-gray-300 focus:outline-none focus:ring-2 focus:ring-white/60 focus:border-transparent transition-all duration-200"
               placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -70,11 +91,11 @@ export default function SignupPage() {
             />
           </div>
 
-          {/* Password Input */}
+          {/* Password Input (solid white) */}
           <div className="relative">
             <input
               type="password"
-              className="w-full h-14 px-6 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white placeholder-white/80 focus:outline-none focus:ring-2 focus:ring-white/50 focus:border-transparent transition-all duration-200"
+              className="w-full h-14 px-6 rounded-full bg-white text-gray-900 placeholder-gray-500 border border-gray-300 focus:outline-none focus:ring-2 focus:ring-white/60 focus:border-transparent transition-all duration-200"
               placeholder="Password (min 6 chars)"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
