@@ -19,7 +19,7 @@ export default function LoginPage() {
 
   // If already signed in, bounce to home (or wherever)
   if (!loading && user) {
-    router.replace("/dashboard");
+    router.replace("/welcome");
   }
 
   async function onEmailLogin(e: React.FormEvent) {
