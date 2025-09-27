@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, Square, RotateCcw, Bot, Brain, Sparkles } from 'lucide-react';
+import { useAuth } from '@/app/FirebaseAuthProvider';
 
 interface AgentMessage {
   role: "system" | "user" | "assistant";
@@ -23,6 +24,7 @@ interface ConversationState {
 }
 
 export const DualAgentChat: React.FC = () => {
+  const { user } = useAuth();
   const [conversation, setConversation] = useState<ConversationState>({
     messages: [],
     currentAgent: "ego",
@@ -44,6 +46,27 @@ export const DualAgentChat: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [conversation.messages]);
+
+  // Track user engagement (each user input)
+  const trackUserEngagement = async (inputType: string, engagementType: string) => {
+    if (!user?.uid) return;
+    
+    try {
+      await fetch('/api/conversations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.uid,
+          inputType,
+          engagementType
+        }),
+      });
+    } catch (error) {
+      console.error('Error tracking user engagement:', error);
+    }
+  };
 
   const startConversation = async () => {
     setIsLoading(true);
@@ -74,6 +97,9 @@ export const DualAgentChat: React.FC = () => {
         isRunning: true,
         conversationComplete: data.conversationComplete
       }));
+
+      // Track conversation start (first agent response)
+      trackUserEngagement('conversation-start', 'dual-agent');
     } catch (error) {
       console.error('Error starting conversation:', error);
     } finally {
@@ -113,6 +139,9 @@ export const DualAgentChat: React.FC = () => {
         turnCount: data.turnCount,
         conversationComplete: data.conversationComplete
       }));
+
+      // Track agent response
+      trackUserEngagement('agent-response', 'dual-agent');
     } catch (error) {
       console.error('Error continuing conversation:', error);
     } finally {
@@ -161,6 +190,10 @@ export const DualAgentChat: React.FC = () => {
         turnCount: data.turnCount,
         conversationComplete: data.conversationComplete
       }));
+
+      // Track user input and agent response
+      trackUserEngagement('user-input', 'dual-agent');
+      trackUserEngagement('agent-response', 'dual-agent');
 
       setUserInput(""); // Clear input
     } catch (error) {
