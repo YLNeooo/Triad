@@ -53,7 +53,7 @@ Handles agent communication and conversation flow.
   "messages": [...],          // Conversation history
   "currentAgent": "A",        // Current agent ("A" or "B")
   "turnCount": 0,             // Current turn number
-  "maxTurns": 10              // Maximum conversation length
+  "maxTurns": 100              // Maximum conversation length
 }
 ```
 

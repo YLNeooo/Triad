@@ -1,0 +1,47 @@
+{
+  "id": "summary_1758996227115_pio4xoxz7",
+  "timestamp": "2025-09-27T18:03:47.115Z",
+  "date": "Saturday, September 27, 2025",
+  "time": "02:03 PM",
+  "summary": "In this conversation, the user initially expresses a lack of interest in discussing their feelings but later opens up about their desire to find a girlfriend. The Ego responds with practical advice, emphasizing social engagement, online dating, confidence building, and the importance of friendship as a foundation for relationships. The Superego encourages the user to reflect on their feelings and values, highlighting the importance of self-awareness in the pursuit of relationships. The user appears to be seeking guidance and support in navigating their romantic interests, indicating a desire for connection and companionship.",
+  "keyTopics": [
+    "finding a girlfriend",
+    "socializing",
+    "self-improvement"
+  ],
+  "insights": [
+    "User is open to advice on relationships",
+    "User may struggle with confidence in dating",
+    "User values practical steps for social engagement"
+  ],
+  "psychologicalThemes": [
+    "relationship building",
+    "self-reflection"
+  ],
+  "recommendations": [
+    "Engage in social activities",
+    "Explore online dating platforms",
+    "Focus on building confidence"
+  ],
+  "agentInteractions": {
+    "ego": 2,
+    "superego": 1,
+    "user": 3
+  },
+  "conversationLength": 6,
+  "storagePath": "cedar-app/LINK_TO_STORAGE/summary_1758996227115_pio4xoxz7.json",
+  "memoryTags": [
+    "dating advice",
+    "relationship goals",
+    "confidence building"
+  ],
+  "emotionalTone": "The overall emotional state appears to be a mix of curiosity and uncertainty regarding dating, with a hint of openness to guidance.",
+  "userConcerns": [
+    "difficulty in finding a girlfriend",
+    "lack of confidence in dating"
+  ],
+  "resolutions": [
+    "User received practical advice on finding a girlfriend",
+    "User encouraged to reflect on personal values and feelings"
+  ]
+}

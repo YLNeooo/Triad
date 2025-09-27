@@ -1,0 +1,46 @@
+{
+  "id": "summary_1759001992627_758w6ovjl",
+  "timestamp": "2025-09-27T19:39:52.627Z",
+  "date": "Saturday, September 27, 2025",
+  "time": "03:39 PM",
+  "summary": "In this conversation, the user, identified as Ivan, expresses a clear preference for being recognized by his actual name rather than the previously used name YL. The Ego acknowledges this need for recognition and authenticity, emphasizing the importance of identity. The Superego reinforces this sentiment by highlighting the significance of honoring one's true self and offers support in Ivan's journey of self-exploration. The dialogue reflects a clear transition from the use of a nickname to the user's preferred name, indicating a desire for validation and acknowledgment of his identity.",
+  "keyTopics": [
+    "identity recognition",
+    "self-exploration",
+    "personal preference"
+  ],
+  "insights": [
+    "The user values being recognized by their true name.",
+    "There is a strong emphasis on identity and authenticity.",
+    "The conversation indicates a need for support in self-exploration."
+  ],
+  "psychologicalThemes": [
+    "identity",
+    "validation"
+  ],
+  "recommendations": [
+    "Continue to explore personal identity and preferences.",
+    "Engage in discussions about self-exploration and authenticity."
+  ],
+  "agentInteractions": {
+    "ego": 2,
+    "superego": 2,
+    "user": 4
+  },
+  "conversationLength": 8,
+  "storagePath": "cedar-app/LINK_TO_STORAGE/summary_1759001992627_758w6ovjl.json",
+  "memoryTags": [
+    "identity",
+    "self-recognition",
+    "Ivan"
+  ],
+  "emotionalTone": "The overall emotional state reflects a desire for validation and authenticity, with a positive tone towards self-exploration.",
+  "userConcerns": [
+    "Desire to be recognized by true name",
+    "Need for support in self-exploration"
+  ],
+  "resolutions": [
+    "User's preference for the name Ivan is acknowledged and respected.",
+    "Ego and Superego both support the user's journey of self-exploration."
+  ]
+}

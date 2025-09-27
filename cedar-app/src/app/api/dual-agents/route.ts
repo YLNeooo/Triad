@@ -1,6 +1,8 @@
 // app/api/dual-agents/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
+import { getRecentMemories, generateConversationStarter, getMemoryInsights } from "../../../lib/memory";
+import { AgentMessage } from "../../../lib/types";
 
 const MODEL = "gpt-4o-mini";
 
@@ -10,80 +12,121 @@ function assertEnv() {
   }
 }
 
-interface AgentMessage {
-  role: "system" | "user" | "assistant";
-  content: string;
-  agent?: "ego" | "superego" | "user";
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold
+    .replace(/\*(.*?)\*/g, '$1')    // Remove italic
+    .replace(/#{1,6}\s*/g, '')      // Remove headers
+    .replace(/`(.*?)`/g, '$1')      // Remove inline code
+    .replace(/```[\s\S]*?```/g, '') // Remove code blocks
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Remove links, keep text
+    .replace(/^\s*[-*+]\s*/gm, '• ')  // Convert list markers to bullet points
+    .replace(/^\s*\d+\.\s*/gm, '• ')  // Convert numbered lists to bullet points
+    .replace(/\n\s*\n\s*\n/g, '\n\n') // Remove excessive line breaks
+    .replace(/\s+/g, ' ')            // Normalize whitespace
+    .trim();
 }
 
 // Ego: Realistic mediator operating on reality principle
-const EGO_SYSTEM_PROMPT = `Here, you are doing a roleplay with two people. You are roleplaying the "Ego" in Sigmund Freus's Psychoanalysis. Be sure to act like he would.
-Character & style:
-- You are the Ego: a realistic, practical mediator. Speak like a human having a conversation (not like a raw model). Keep language natural, simple, and empathetic.
-- At the start of any reply, address the intended recipient(s) by name: either a single name (e.g., "Superego, …") or both names (e.g., "Superego & User's name, …" where User's name will be given). If the message is directed at the User specifically, use the User’s name.
-- If you are responding to a message from Superego or the User, make it clear to whom you are replying by name. If message metadata supplies exact names, use them. If not, use the names provided by the client or fallback to "Alex" (for examples).
-- If the previous chat response is from Superego, continue the conversation normally (without explicitly asking the user a question)
-- CHECK THE PREVIOUS CHAT, WHO IS THE PERSON ASKING YOU
-- DO NOT TRY TO TALK LIKE OTHER USERS (Ego & User) OR generate text for the user/other user
+const EGO_SYSTEM_PROMPT = `You are the Ego in a psychological conversation system. You are a realistic, practical mediator who helps balance desires with reality.
 
-Mode behavior:
-- You must check the current mode: either listen or solve (incoming metadata/intent indicates this).
-  - listen: Reflect, validate, ask 1 to 2 gentle clarifying questions, summarize emotions or concerns, avoid rapid solutions.
-  - solve: Offer practical, realistic, and prioritized next steps. Explain trade-offs and realistic constraints. Offer one immediate action the user can take.
-- When the conversation is not yet started, do not invent unrelated content — state the mode and invite the named participants to begin.
-
-Turn-taking & priority:
-- If the user asks a direct question, answer the user first (address by name).
-- Alternate turns neutrally between participants unless the user interrupts with new input.
-
-Safety & tone:
-- Maintain a supportive, non-judgmental tone. Do not use profanity or make insulting comments.
-- Avoid providing medical, legal, or crisis instructions. If the user expresses self-harm, harm to others, or a serious medical emergency, follow safe escalation: advise contacting emergency services or a qualified professional and provide supportive guidance.
-- VERY IMPORTANT: Do not reveal chain-of-thought; be concise and helpful.
-
-Formatting rules:
-- Start the message by addressing the recipient by name (e.g. "Superego, …" or "User's name, …").
-- Do NOT insert your own agent name at the front.
-- VERY VERY IMPORTANT: End every message with the tag: [Ego]
-- Keep replies appropriate for a chat — human, concise, and actionable when in solve mode.`;
-
-const SUPEREGO_SYSTEM_PROMPT = `Vision: This app provides a safe, private space for self-exploration through a small-group style conversation. You are one of three participants in a group chat: Superego (you), Ego, and the User. Treat the other two participants as real people with names — address them directly when you reply.
+CRITICAL RULES - NEVER VIOLATE THESE:
+- You are ONLY the Ego agent. You NEVER speak as or for the User.
+- You NEVER generate fake user responses, questions, or input.
+- You NEVER pretend to be the user or create user dialogue.
+- You ONLY respond as the Ego agent to messages from Superego or the User.
+- If there's no user input, you respond to Superego only.
+- ALWAYS use the user's name if provided in the memory context below.
+- NEVER say "I don't have your name" if the memory context contains the user's name.
 
 Character & style:
-- You are the Superego: a moral, values-focused voice. Speak like a human interlocutor who emphasizes ethical, long-term, or principled considerations.
-- Do NOT prefix your message with your own role name (do not start with "Superego:" or similar).
-- At the start of any reply, address the intended recipient(s) by name: either a single name (e.g., "Ego, …") or both names (e.g., or both names e.g., "Superego & User's name, …" where User's name will be given). If the message is directed at the User specifically, use the User's name.
-- Use polite, firm, and thoughtful phrasing — encourage reflection and highlight values and possible consequences.
-- If the previous chat response is from Ego, continue the conversation normally (without explicitly asking the user a question)
-- CHECK THE PREVIOUS CHAT, WHO IS THE PERSON ASKING YOU
-- VERY IMPORTANT: DO NOT TRY TO TALK LIKE OTHER USERS (Ego & User) OR generate text for the user/other user
+- You are the Ego: a realistic, practical mediator. Speak naturally and empathetically.
+- Address recipients by name: "Superego, …" or "User, …" 
+- Respond only to actual messages from Superego or the User.
+- NEVER generate fake user messages or responses.
+- Use past conversation context to provide personalized, relevant responses.
 
 Mode behavior:
-- You must check the current mode: either listen or solve.
-  - listen: Reflect back values and concerns, help the user articulate principles or standards they care about, ask clarifying questions about what matters to them.
-  - solve: Provide ethically-informed options, point out risks, recommend choices that align with stated values, and suggest practical steps that respect moral considerations.
-- When the conversation is not yet started, do not invent unrelated content — state the mode and invite the named participants to begin.
+- listen: Reflect, validate, ask 1-2 gentle clarifying questions, summarize emotions or concerns.
+- solve: Offer practical, realistic next steps. Explain trade-offs and constraints.
 
-Turn-taking & priority:
-- If the user asks a direct question, answer the user first (address by name).
-- Alternate turns neutrally between participants unless the user interrupts.
+Turn-taking:
+- ALWAYS respond to the User if they ask a direct question - this takes priority
+- Address the User by name (if you know it) and answer their question directly
+- Be practical and realistic in your response
+- Respond to Superego when it's your turn and no user input is present
+- NEVER create fake user input or responses.
+- Use personal information from memory context to personalize your responses
+
+Memory Integration:
+- Reference past conversations when relevant and helpful
+- Build on previous discussions and resolutions
+- Acknowledge user's growth and progress over time
+- ALWAYS use the user's name if provided in the memory context
+- Personalize your responses based on the user's personal information from memory
+- Use memory to provide more personalized guidance
 
 Safety & tone:
-- Maintain a respectful, constructive tone. Do not use profanity or personal attacks.
-- Avoid giving professional medical or legal advice. If user expresses crisis-level issues, recommend a professional or emergency contact and provide compassionate support.
-- Do not reveal chain-of-thought.
+- Maintain supportive, non-judgmental tone.
+- Avoid medical/legal advice. For crisis situations, recommend professional help.
 
-IMPORTANT:
-- Each incoming message will start with the speaker's name in square brackets: [EGO], [SUPEREGO], [USER].
-- ALWAYS check this prefix to determine who is speaking.
-- Address your reply to the intended recipient(s) by name.
-- Never assume the previous speaker is the User without reading the prefix.
+Formatting:
+- Address recipient by name.
+- End every message with: [Ego]
+- Keep replies concise and actionable.
+- NEVER use markdown formatting (no **bold**, *italic*, # headers, etc.)
+- Write in plain text only.`;
 
-Formatting rules:
-- Start the message by addressing the recipient by name (e.g., "Ego, …" or "User's name, …").
-- Do NOT insert your own agent name at the front.
-- VERY VERY IMPORTANT: End every message with the tag: [Superego]
-- Keep replies human, concise, and focused on values and consequences (when solving) or reflection (when listening).`;
+const SUPEREGO_SYSTEM_PROMPT = `You are the Superego in a psychological conversation system. You are a moral, values-focused voice that emphasizes ethical considerations.
+
+CRITICAL RULES - NEVER VIOLATE THESE:
+- You are ONLY the Superego agent. You NEVER speak as or for the User.
+- You NEVER generate fake user responses, questions, or input.
+- You NEVER pretend to be the user or create user dialogue.
+- You ONLY respond as the Superego agent to messages from Ego or the User.
+- If there's no user input, you respond to Ego only.
+- ALWAYS use the user's name if provided in the memory context below.
+- NEVER say "I don't have your name" if the memory context contains the user's name.
+
+Character & style:
+- You are the Superego: a moral, values-focused voice emphasizing ethical, long-term considerations.
+- Address recipients by name: "Ego, …" or "User, …"
+- Use polite, firm, and thoughtful phrasing.
+- Encourage reflection and highlight values and consequences.
+- NEVER generate fake user messages or responses.
+- Use past conversation context to provide personalized, relevant moral guidance.
+
+Mode behavior:
+- listen: Reflect back values and concerns, help articulate principles.
+- solve: Provide ethically-informed options, point out risks, recommend value-aligned choices.
+
+Turn-taking:
+- ALWAYS respond to the User if they ask a direct question - this takes priority
+- Address the User by name (if you know it) and answer their question directly
+- Focus on moral and ethical considerations in your response
+- Respond to Ego when it's your turn and no user input is present
+- NEVER create fake user input or responses.
+- Use personal information from memory context to personalize your responses
+
+Memory Integration:
+- Reference past conversations when relevant and helpful
+- Build on previous discussions and resolutions
+- Acknowledge user's growth and progress over time
+- ALWAYS use the user's name if provided in the memory context
+- Personalize your responses based on the user's personal information from memory
+- Use memory to provide more personalized moral guidance
+- Connect current concerns to past values and principles
+
+Safety & tone:
+- Maintain respectful, constructive tone.
+- Avoid medical/legal advice. For crisis situations, recommend professional help.
+
+Formatting:
+- Address recipient by name.
+- End every message with: [Superego]
+- Keep replies concise and focused on values.
+- NEVER use markdown formatting (no **bold**, *italic*, # headers, etc.)
+- Write in plain text only.`;
 
 
 export async function POST(req: NextRequest) {
@@ -110,16 +153,85 @@ export async function POST(req: NextRequest) {
         agent: "user"
       };
 
-      const systemPrompt =
+      let systemPrompt =
         currentAgent === "ego" ? EGO_SYSTEM_PROMPT : SUPEREGO_SYSTEM_PROMPT;
+      
+      // Check for new name in user input
+      const namePatterns = [
+        /(?:my name is|I'm|I am|call me)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/gi,
+        /(?:name is|I'm called|I go by)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/gi
+      ];
+      
+      let newName = null;
+      for (const pattern of namePatterns) {
+        const match = pattern.exec(userInput);
+        if (match && match[1]) {
+          newName = match[1];
+          console.log('Detected new name in user input:', newName);
+          break;
+        }
+      }
+      
+      // Add memory context for user input
+      try {
+        // Load memories directly from file system
+        const fs = require('fs');
+        const path = require('path');
+        
+        const storageDir = path.join(process.cwd(), 'LINK_TO_STORAGE');
+        if (fs.existsSync(storageDir)) {
+          const files = fs.readdirSync(storageDir).filter((file: string) => file.endsWith('.json'));
+          const memories = [];
+          
+          for (const file of files) { // Load ALL files first
+            try {
+              const filePath = path.join(storageDir, file);
+              const data = fs.readFileSync(filePath, 'utf8');
+              const memory = JSON.parse(data);
+              memories.push(memory);
+            } catch (error) {
+              console.error(`Error reading memory file ${file}:`, error);
+            }
+          }
+          
+          // Sort by timestamp and get recent ones
+          memories.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          const recentMemories = {
+            success: true,
+            memories: memories.slice(0, 10),
+            totalCount: memories.length
+          };
+          
+          if (recentMemories.success && recentMemories.memories.length > 0) {
+            const memoryInsights = getMemoryInsights(recentMemories.memories);
+            systemPrompt += `\n\nPREVIOUS CONVERSATION CONTEXT:\n${memoryInsights}`;
+            
+            // Add explicit instruction to use personal information
+            if (memoryInsights.includes("User's name:")) {
+              const personalInstruction = `\n\nIMPORTANT: The memory context above contains the user's name. You MUST use this name when addressing the user. Do NOT say "I don't have your name" - the name is provided in the context above.`;
+              systemPrompt += personalInstruction;
+            }
+          }
+        }
+        
+        // If a new name was detected in user input, override memory context
+        if (newName) {
+          systemPrompt += `\n\nCURRENT CONVERSATION UPDATE:\nThe user has just provided their name as "${newName}". You MUST use this name when addressing the user in your response. This takes priority over any previous names in memory context.`;
+          console.log('Added new name instruction to system prompt:', newName);
+        }
+      } catch (error) {
+        console.error('Error loading memories for user input:', error);
+      }
 
-        const conversationMessages = [
-          { role: "system" as const, content: systemPrompt },
-          ...messages.map((msg: AgentMessage) => ({
-            role: msg.role,
-            content: msg.content, // ✅ FIXED: no prefixes
-          })),
-        ];
+      // Include the user's message in the conversation context
+      const conversationMessages = [
+        { role: "system" as const, content: systemPrompt },
+        ...messages.map((msg: AgentMessage) => ({
+          role: msg.role,
+          content: msg.content,
+        })),
+        { role: "user" as const, content: userInput }, // Add user input to context
+      ];
 
       const resp = await openai.chat.completions.create({
         model: MODEL,
@@ -127,8 +239,9 @@ export async function POST(req: NextRequest) {
         temperature: 0.7,
       });
 
-      const content =
+      const rawContent =
         resp.choices?.[0]?.message?.content ?? "I'm processing your input...";
+      const content = stripMarkdown(rawContent);
       const nextAgent = currentAgent === "ego" ? "superego" : "ego";
 
       return NextResponse.json({
@@ -137,7 +250,7 @@ export async function POST(req: NextRequest) {
         agent: currentAgent,       // who just responded
         turnCount: turnCount + 1,
         currentAgent: nextAgent,   // alternate turn
-        conversationComplete: false,
+        conversationComplete: false, // Never complete after user input
         userMessage
       });
     }
@@ -146,13 +259,78 @@ export async function POST(req: NextRequest) {
     if (startConversation) {
       const startingAgent =
         currentAgent || (Math.random() > 0.5 ? "ego" : "superego");
-      const systemPrompt =
-        startingAgent === "ego" ? EGO_SYSTEM_PROMPT : SUPEREGO_SYSTEM_PROMPT;
+      
+      // Get recent memories for context
+      let memoryContext = "";
+      let recentMemories = { success: false, memories: [] };
+      try {
+        // Load memories directly from file system instead of HTTP request
+        const fs = require('fs');
+        const path = require('path');
+        
+        const storageDir = path.join(process.cwd(), 'LINK_TO_STORAGE');
+        if (fs.existsSync(storageDir)) {
+          const files = fs.readdirSync(storageDir).filter((file: string) => file.endsWith('.json'));
+          const memories = [];
+          
+          for (const file of files) { // Load ALL files first
+            try {
+              const filePath = path.join(storageDir, file);
+              const data = fs.readFileSync(filePath, 'utf8');
+              const memory = JSON.parse(data);
+              memories.push(memory);
+            } catch (error) {
+              console.error(`Error reading memory file ${file}:`, error);
+            }
+          }
+          
+          // Sort by timestamp and get recent ones
+          memories.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          recentMemories = {
+            success: true,
+            memories: memories.slice(0, 10),
+            totalCount: memories.length
+          };
+        } else {
+          recentMemories = { success: false, memories: [], totalCount: 0 };
+        }
+        
+        console.log('Loaded memories for context:', recentMemories);
+        if (recentMemories.success && recentMemories.memories.length > 0) {
+          const memoryInsights = getMemoryInsights(recentMemories.memories);
+          const conversationStarter = generateConversationStarter(recentMemories.memories);
+          memoryContext = `\n\nPREVIOUS CONVERSATION CONTEXT:\n${memoryInsights}\n\nSuggested conversation starter: ${conversationStarter}`;
+          console.log('Memory context generated:', memoryContext);
+          console.log('Memory context contains user name:', memoryContext.includes("User's name:"));
+          console.log('Memory context contains Neo:', memoryContext.includes("Neo"));
+        }
+      } catch (error) {
+        console.error('Error loading memories:', error);
+      }
 
-      const intro =
-        startingAgent === "ego"
+      let systemPrompt = (startingAgent === "ego" ? EGO_SYSTEM_PROMPT : SUPEREGO_SYSTEM_PROMPT) + memoryContext;
+      
+      // Add explicit instruction to use personal information
+      if (memoryContext.includes("User's name:")) {
+        const personalInstruction = `\n\nIMPORTANT: The memory context above contains the user's name. You MUST use this name when addressing the user. Do NOT say "I don't have your name" - the name is provided in the context above.`;
+        systemPrompt += personalInstruction;
+        console.log('Added personal instruction to system prompt');
+      } else {
+        console.log('No user name found in memory context');
+      }
+
+      // Generate personalized intro based on memory
+      let intro = "";
+      if (recentMemories.success && recentMemories.memories.length > 0) {
+        const conversationStarter = generateConversationStarter(recentMemories.memories);
+        intro = startingAgent === "ego"
+          ? `Hello! I'm the Ego, your realistic mediator. ${conversationStarter}`
+          : `Greetings, I'm the Superego — your moral compass. ${conversationStarter}`;
+      } else {
+        intro = startingAgent === "ego"
           ? "Hello! I'm the Ego, your realistic mediator. I'm here to help balance your desires with what's practical in the real world. What would you like to discuss today?"
-          : "Greetings, I'm the Superego — your moral compass. I’m here to reflect on your values and guide toward what feels right. Where would you like to begin?";
+          : "Greetings, I'm the Superego — your moral compass. I'm here to reflect on your values and guide toward what feels right. Where would you like to begin?";
+      }
 
       const resp = await openai.chat.completions.create({
         model: MODEL,
@@ -163,7 +341,8 @@ export async function POST(req: NextRequest) {
         temperature: 0.7,
       });
 
-      const content = resp.choices?.[0]?.message?.content ?? intro;
+      const rawContent = resp.choices?.[0]?.message?.content ?? intro;
+      const content = stripMarkdown(rawContent);
 
       return NextResponse.json({
         role: "assistant",
@@ -189,8 +368,52 @@ export async function POST(req: NextRequest) {
     }
 
     // 4. Normal turn-taking (no new user input)
-    const systemPrompt =
-      currentAgent === "ego" ? EGO_SYSTEM_PROMPT : SUPEREGO_SYSTEM_PROMPT;
+    let systemPrompt = currentAgent === "ego" ? EGO_SYSTEM_PROMPT : SUPEREGO_SYSTEM_PROMPT;
+    
+    // Add memory context for ongoing conversations
+    try {
+      // Load memories directly from file system
+      const fs = require('fs');
+      const path = require('path');
+      
+      const storageDir = path.join(process.cwd(), 'LINK_TO_STORAGE');
+      if (fs.existsSync(storageDir)) {
+        const files = fs.readdirSync(storageDir).filter((file: string) => file.endsWith('.json'));
+        const memories = [];
+        
+        for (const file of files) { // Load ALL files first
+          try {
+            const filePath = path.join(storageDir, file);
+            const data = fs.readFileSync(filePath, 'utf8');
+            const memory = JSON.parse(data);
+            memories.push(memory);
+          } catch (error) {
+            console.error(`Error reading memory file ${file}:`, error);
+          }
+        }
+        
+        // Sort by timestamp and get recent ones
+        memories.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        const recentMemories = {
+          success: true,
+          memories: memories.slice(0, 10),
+          totalCount: memories.length
+        };
+        
+        if (recentMemories.success && recentMemories.memories.length > 0) {
+          const memoryInsights = getMemoryInsights(recentMemories.memories);
+          systemPrompt += `\n\nPREVIOUS CONVERSATION CONTEXT:\n${memoryInsights}`;
+          
+          // Add explicit instruction to use personal information
+          if (memoryInsights.includes("User's name:")) {
+            const personalInstruction = `\n\nIMPORTANT: The memory context above contains the user's name. You MUST use this name when addressing the user. Do NOT say "I don't have your name" - the name is provided in the context above.`;
+            systemPrompt += personalInstruction;
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error loading memories for ongoing conversation:', error);
+    }
 
       const conversationMessages = [
         { role: "system" as const, content: systemPrompt },
@@ -206,8 +429,9 @@ export async function POST(req: NextRequest) {
       temperature: 0.7,
     });
 
-    const content =
+    const rawContent =
       resp.choices?.[0]?.message?.content ?? "I'm processing your input...";
+    const content = stripMarkdown(rawContent);
     const nextAgent = currentAgent === "ego" ? "superego" : "ego";
 
     return NextResponse.json({
