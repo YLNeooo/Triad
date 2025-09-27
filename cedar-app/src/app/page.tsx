@@ -3,6 +3,7 @@
 import { FloatingCedarChat } from "../cedar/components/chatComponents/FloatingCedarChat";
 import Link from "next/link";
 import { useAuth } from "@/app/FirebaseAuthProvider";
+import { Bot, MessageSquare, Calendar } from "lucide-react";
 import React from "react";
 import { TriadBackground } from "../cedar/components/backgrounds/Background";
 
@@ -43,6 +44,17 @@ export default function Page() {
                          transition-colors"
             >
               View Notes
+            </Link>
+            <Link
+              href="/calendar"
+              className="rounded-2xl border-4 px-6 py-3 text-lg tracking-wide
+                         border-white/70 hover:border-white/90
+                         bg-white/0 hover:bg-white/5
+                         shadow-[0_0_0_1px_rgba(255,255,255,0.06)_inset]
+                         transition-colors flex items-center gap-2"
+            >
+              <Calendar className="w-5 h-5" />
+              Calendar
             </Link>
           </div>
         </div>
