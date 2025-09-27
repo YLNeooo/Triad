@@ -14,9 +14,11 @@ export const TriadBackground: React.FC<TriadBackgroundProps> = ({
   children,
 }) => {
   return (
-    <div className={`relative ${className}`}>
+    // 👇 Fill the small viewport height and hide overflow on the page wrapper
+    <div className={`relative min-h-svh overflow-hidden ${className}`}>
       {/* Background gradient + vignette */}
-      <div className="absolute inset-0 -z-10">
+      {/* 👇 Make the background layer FIXED so it always covers the screen */}
+      <div className="fixed inset-0 -z-10 pointer-events-none">
         {/* Base diagonal gradient */}
         <div className="absolute inset-0 bg-[linear-gradient(135deg,#1a0b7a_0%,#2d1b69_35%,#1e0f5c_60%,#0f051f_100%)]" />
         
@@ -28,23 +30,14 @@ export const TriadBackground: React.FC<TriadBackgroundProps> = ({
         
         {/* Rotating gradient cross */}
         {showCross && (
-          <div className="pointer-events-none absolute left-1/2 top-1/2 
-                          -translate-x-1/2 -translate-y-1/2 animate-spin-slow">
-            {/* Vertical line */}
-            <div className="absolute left-1/2 top-1/2 h-[100vmin] w-px 
-                            -translate-x-1/2 -translate-y-1/2 
-                            bg-gradient-to-b from-transparent via-white/30 to-transparent blur-[0.5px]" />
-            {/* Horizontal line */}
-            <div className="absolute left-1/2 top-1/2 w-[110vmin] h-px 
-                            -translate-x-1/2 -translate-y-1/2 
-                            bg-gradient-to-r from-transparent via-white/30 to-transparent blur-[0.5px]" />
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 animate-spin-slow">
+            <div className="absolute left-1/2 top-1/2 h-[100vmin] w-px -translate-x-1/2 -translate-y-1/2 bg-gradient-to-b from-transparent via-white/30 to-transparent blur-[0.5px]" />
+            <div className="absolute left-1/2 top-1/2 w-[110vmin] h-px -translate-x-1/2 -translate-y-1/2 bg-gradient-to-r from-transparent via-white/30 to-transparent blur-[0.5px]" />
           </div>
         )}
         
         {/* Thin neon frame */}
-        {showFrame && (
-          <div className="absolute inset-0 ring-1 ring-cyan-300/40" />
-        )}
+        {showFrame && <div className="absolute inset-0 ring-1 ring-cyan-300/40" />}
       </div>
       
       {/* Content */}
