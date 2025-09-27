@@ -4,7 +4,7 @@ import { FloatingCedarChat } from "../cedar/components/chatComponents/FloatingCe
 import Link from "next/link";
 import { Bot, MessageSquare } from "lucide-react";
 import React from "react";
-import { TriadBackground } from "../cedar/components/backgrounds/TriadBackground";
+import { TriadBackground } from "../cedar/components/backgrounds/Background";
 
 export default function Page() {
   return (
@@ -32,22 +32,6 @@ export default function Page() {
               Get Started Today
             </Link>
           </div>
-        </div>
-        <div className="p-6 border border-gray-200 rounded-lg">
-          <div className="flex items-center gap-2 mb-3">
-            <Bot className="w-5 h-5 text-purple-600" />
-            <h2 className="text-lg font-semibold">Ego-Superego Conversation</h2>
-          </div>
-          <p className="text-gray-600 mb-4">
-            Interact with your psychological agents - Ego (realistic mediator) and Superego (moral compass)
-          </p>
-          <Link 
-            href="/dual-agents"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-          >
-            <Bot className="w-4 h-4" />
-            Try Ego-Superego
-          </Link>
         </div>
       </section>
 
