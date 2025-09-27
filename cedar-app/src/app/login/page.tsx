@@ -1,7 +1,7 @@
 // src/app/login/page.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { auth, googleProvider } from "@/lib/firebase/client";
@@ -17,10 +17,12 @@ export default function LoginPage() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // If already signed in, bounce to home (or wherever)
-  if (!loading && user) {
-    router.replace("/welcome");
-  }
+  // Redirect to welcome page if user is already authenticated
+  useEffect(() => {
+    if (!loading && user) {
+      router.replace("/welcome");
+    }
+  }, [loading, user, router]);
 
   async function onEmailLogin(e: React.FormEvent) {
     e.preventDefault();
