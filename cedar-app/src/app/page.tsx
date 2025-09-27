@@ -16,19 +16,19 @@ export default function Page() {
             TRIAD
           </h1>
           <p className="mt-6 text-lg md:text-xl text-slate-200/80">
-            Fuck GT!!!! 
+            Message here
           </p>
 
           <div className="mt-14 flex justify-center">
             <Link
-              href="/dashboard"
+              href="/login"
               className="rounded-2xl border-4 px-10 py-3 text-lg tracking-wide
                          border-white/70 hover:border-white/90
                          bg-white/0 hover:bg-white/5
                          shadow-[0_0_0_1px_rgba(255,255,255,0.06)_inset]
                          transition-colors"
             >
-              LOGIN
+              Get Started Today
             </Link>
           </div>
         </div>
