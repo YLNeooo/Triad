@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import styles from "./page.module.css";
-
+import { TriadBackground } from "@/cedar/components/backgrounds/TriadBackground";
 /** ---------- Data Types ---------- */
 type Side = {
   key: string;     // "E" | "I" | "S" | "N" | "T" | "F" | "J" | "P"
@@ -153,6 +153,7 @@ export default function BoardingPage() {
   };
 
 return (
+  <TriadBackground className="min-h-[100dvh] text-white overflow-hidden">
   <main className={styles.main}>
     <div className={styles.wrap}>
       <div className={styles.notesRow}>
@@ -177,7 +178,9 @@ return (
       </div>
     </div>
   </main>
-);
+  </TriadBackground>
+  );
+}
 
 
 /** ---------- NoteCard (controlled flip) ---------- */
