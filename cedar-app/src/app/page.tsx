@@ -1,36 +1,14 @@
 // src/app/page.tsx
 "use client";
-import React from "react";
-import Link from "next/link";
 import { FloatingCedarChat } from "../cedar/components/chatComponents/FloatingCedarChat";
+import Link from "next/link";
+import { Bot, MessageSquare } from "lucide-react";
+import React from "react";
+import { TriadBackground } from "../cedar/components/backgrounds/TriadBackground";
 
 export default function Page() {
   return (
-    <main className="relative min-h-[100dvh] text-white overflow-hidden">
-      {/* Background gradient + vignette */}
-      <div className="absolute inset-0 -z-10">
-        {/* base diagonal gradient */}
-        <div className="absolute inset-0 bg-[linear-gradient(135deg,#3b1ff4_0%,#5b29f0_35%,#6f33f2_60%,#2D1B69_100%)]" />
-        {/* soft center glow */}
-        <div className="absolute inset-0 bg-[radial-gradient(60vw_40vw_at_50%_50%,rgba(255,255,255,0.10),rgba(255,255,255,0)_60%)]" />
-        {/* corner vignette */}
-        <div className="absolute inset-0 bg-[radial-gradient(70vw_70vw_at_-10%_-10%,rgba(0,0,0,0.35),transparent_55%),radial-gradient(70vw_70vw_at_110%_-10%,rgba(0,0,0,0.35),transparent_55%),radial-gradient(70vw_70vw_at_-10%_110%,rgba(0,0,0,0.35),transparent_55%),radial-gradient(70vw_70vw_at_110%_110%,rgba(0,0,0,0.35),transparent_55%)]" />
-        subtle rotating gradient cross
-          <div className="pointer-events-none absolute left-1/2 top-1/2 
-                          -translate-x-1/2 -translate-y-1/2 animate-spin-slow">
-            {/* vertical line */}
-            <div className="absolute left-1/2 top-1/2 h-[100vmin] w-px 
-                            -translate-x-1/2 -translate-y-1/2 
-                            bg-gradient-to-b from-transparent via-white/30 to-transparent blur-[0.5px]" />
-            {/* horizontal line */}
-            <div className="absolute left-1/2 top-1/2 w-[110vmin] h-px 
-                            -translate-x-1/2 -translate-y-1/2 
-                            bg-gradient-to-r from-transparent via-white/30 to-transparent blur-[0.5px]" />
-          </div>
-          
-        {/* thin neon frame like the mock */}
-        <div className="absolute inset-0 ring-1 ring-cyan-300/40" />
-      </div>
+    <TriadBackground className="min-h-[100dvh] text-white overflow-hidden">
 
       {/* Centered hero */}
       <section className="relative grid place-items-center h-[100dvh]">
@@ -39,26 +17,48 @@ export default function Page() {
             TRIAD
           </h1>
           <p className="mt-6 text-lg md:text-xl text-slate-200/80">
-            Fuck GT!!!! 
+            Message here
           </p>
 
           <div className="mt-14 flex justify-center">
             <Link
-              href="/sign-in"
+              href="/login"
               className="rounded-2xl border-4 px-10 py-3 text-lg tracking-wide
                          border-white/70 hover:border-white/90
                          bg-white/0 hover:bg-white/5
                          shadow-[0_0_0_1px_rgba(255,255,255,0.06)_inset]
                          transition-colors"
             >
-              LOGIN
+              Get Started Today
             </Link>
           </div>
+        </div>
+        <div className="p-6 border border-gray-200 rounded-lg">
+          <div className="flex items-center gap-2 mb-3">
+            <Bot className="w-5 h-5 text-purple-600" />
+            <h2 className="text-lg font-semibold">Ego-Superego Conversation</h2>
+          </div>
+          <p className="text-gray-600 mb-4">
+            Interact with your psychological agents - Ego (realistic mediator) and Superego (moral compass)
+          </p>
+          <Link 
+            href="/dual-agents"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+          >
+            <Bot className="w-4 h-4" />
+            Try Ego-Superego
+          </Link>
         </div>
       </section>
 
       {/* Floating chat widget (kept) */}
       <FloatingCedarChat />
-    </main>
+    </TriadBackground>
   );
 }
+
+
+
+
+
+        
