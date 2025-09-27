@@ -14,7 +14,7 @@ type Side = {
 
 type NotePair = { sides: [Side, Side] };
 
-/** ---------- Content: 4 MBTI Pairs ---------- */
+/** ---------- Content: 4 MBTI Pairs in canonical order EI, SN, TF, JP ---------- */
 const MBTI_NOTES: NotePair[] = [
   {
     sides: [
@@ -48,7 +48,7 @@ const MBTI_NOTES: NotePair[] = [
       },
       {
         key: "N",
-        title: "Intuition",
+        title: "iNtuition",
         desc: "Looks for patterns and possibilities; big-picture and future-oriented.",
         color: "#4cc2ff",
         accent: "#c9ecff",
@@ -100,24 +100,98 @@ const MBTI_NOTES: NotePair[] = [
 
 /** ---------- Page ---------- */
 export default function BoardingPage() {
-  return (
-    <main className={styles.main}>
-      <div className={styles.wrap}>
-        <div className={styles.notesRow}>
-          {MBTI_NOTES.map((pair, i) => (
-            <NoteCard key={i} sides={pair.sides} />
-          ))}
-        </div>
-      </div>
-    </main>
+  // For each card, track whether the FIRST side is currently shown (true) or the SECOND (false).
+  const [isFirst, setIsFirst] = React.useState<boolean[]>(
+    () => MBTI_NOTES.map(() => true) // default to E, S, T, J
   );
-}
+  const [saving, setSaving] = React.useState(false);
 
-/** ---------- NoteCard (independent flip) ---------- */
-function NoteCard({ sides }: { sides: [Side, Side] }) {
+  const handleFlipToggle = (i: number) => {
+    setIsFirst((prev) => {
+      const next = prev.slice();
+      next[i] = !next[i];
+      return next;
+    });
+  };
+
+  const handleContinue = () => {
+    if (saving) return;
+    setSaving(true);
+
+    // Build MBTI string in EI-SN-TF-JP order
+    const letters = MBTI_NOTES.map((pair, i) =>
+      isFirst[i] ? pair.sides[0].key : pair.sides[1].key
+    ).join("");
+
+    // Also keep a detailed record (which side chosen for each pair)
+    const detail = MBTI_NOTES.map((pair, i) => {
+      const chosen = isFirst[i] ? pair.sides[0] : pair.sides[1];
+      const other  = isFirst[i] ? pair.sides[1] : pair.sides[0];
+      return {
+        dimension: `${pair.sides[0].key}/${pair.sides[1].key}`, // e.g., "E/I"
+        chosen: { key: chosen.key, title: chosen.title },
+        other:  { key: other.key,  title: other.title  },
+      };
+    });
+
+    try {
+      // Persist so you can use it later anywhere in the app.
+      localStorage.setItem("mbti", letters);
+      localStorage.setItem("mbtiDetail", JSON.stringify(detail));
+
+      // Optional: broadcast to the app (listen with window.addEventListener("mbti:selected", ...))
+      window.dispatchEvent(
+        new CustomEvent("mbti:selected", { detail: { mbti: letters, detail } })
+      );
+
+      // (Optional) lightweight feedback
+      // eslint-disable-next-line no-alert
+      alert(`Saved your MBTI: ${letters}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+return (
+  <main className={styles.main}>
+    <div className={styles.wrap}>
+      <div className={styles.notesRow}>
+        {MBTI_NOTES.map((pair, i) => (
+          <NoteCard
+            key={i}
+            sides={pair.sides}
+            frontIsFirst={isFirst[i]}
+            onFlip={() => handleFlipToggle(i)}
+          />
+        ))}
+      </div>
+
+      <div className={styles.buttonRow}>
+        <button
+          className={styles.nextBtn}
+          onClick={handleContinue}
+          disabled={saving}
+        >
+          {saving ? "Saving…" : "Continue"}
+        </button>
+      </div>
+    </div>
+  </main>
+);
+
+
+/** ---------- NoteCard (controlled flip) ---------- */
+function NoteCard({
+  sides,
+  frontIsFirst,
+  onFlip,
+}: {
+  sides: [Side, Side];
+  frontIsFirst: boolean;
+  onFlip: () => void;
+}) {
   const [flipping, setFlipping] = React.useState(false);
-  const [resetting, setResetting] = React.useState(false); // removes transition during snap-back
-  const [frontIsFirst, setFrontIsFirst] = React.useState(true);
+  const [resetting, setResetting] = React.useState(false);
 
   const handleFlip = () => {
     if (flipping || resetting) return;
@@ -126,9 +200,9 @@ function NoteCard({ sides }: { sides: [Side, Side] }) {
 
   const onFlipEnd = () => {
     if (!flipping) return;
-    setFrontIsFirst((v) => !v); // swap which side is logically front
+    onFlip();              // swap which side is logically front (lifted state)
     setFlipping(false);
-    setResetting(true); // snap back to 0deg instantly to avoid double flip
+    setResetting(true);    // snap back to 0deg instantly; avoids double spin
   };
 
   React.useEffect(() => {
@@ -145,7 +219,7 @@ function NoteCard({ sides }: { sides: [Side, Side] }) {
       className={styles.noteStage}
       onClick={handleFlip}
       role="button"
-      aria-label={`Flip ${A.key}/${B.key} note`}
+      aria-label={`Flip ${sides[0].key}/${sides[1].key} note (currently ${A.key})`}
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {

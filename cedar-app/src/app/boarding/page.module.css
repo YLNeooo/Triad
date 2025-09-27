@@ -89,3 +89,10 @@
 @media (max-width: 700px) {
   .noteStage { --noteSize: 180px; }
 }
+
+.buttonRow {
+  margin-top: 2rem;          /* spacing below the notes */
+  display: flex;
+  justify-content: center;   /* center horizontally */
+  width: 100%;
+}
