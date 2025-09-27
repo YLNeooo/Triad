@@ -1,7 +1,7 @@
 // src/app/signup/page.tsx
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { auth, googleProvider, db } from "@/lib/firebase/client";
@@ -36,9 +36,12 @@ export default function SignupPage() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  if (!loading && user) {
-    router.replace("/welcome");
-  }
+  // Redirect to welcome page if user is already authenticated
+  useEffect(() => {
+    if (!loading && user) {
+      router.replace("/welcome");
+    }
+  }, [loading, user, router]);
 
   async function onEmailSignup(e: React.FormEvent) {
     e.preventDefault();
