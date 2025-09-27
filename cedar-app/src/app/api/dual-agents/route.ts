@@ -16,74 +16,219 @@ interface AgentMessage {
   agent?: "ego" | "superego" | "user";
 }
 
+function isBracketOutputValid(text: string): boolean {
+  if (!text) return false;
+  const toAndContent = /\[\s*To\s*:\s*(Ego|Superego|User)\s*\]\s*\[\s*Content\s*:\s*[\s\S]+\]/i;
+  const onlyContent = /\[\s*Content\s*:\s*[\s\S]+\]/i;
+  return toAndContent.test(text) || onlyContent.test(text);
+}
+
+function withAgentTag(msg: AgentMessage): string {
+  if (msg.role === "assistant" && msg.agent && msg.agent !== "user") {
+    const tag = `[AGENT:${msg.agent.toUpperCase()}]`;
+    // Also surface [To: ...] if present so downstream agents and the router can see target quickly
+    const toMatch = msg.content.match(/\[\s*To\s*:\s*(Ego|Superego|User)\s*\]/i);
+    const toTag = toMatch ? `[TO:${(toMatch[1] || '').toUpperCase()}]` : '';
+    return `${tag}${toTag ? ` ${toTag}` : ''}\n${msg.content}`;
+  }
+  return msg.content;
+}
+function extractToTarget(text: string): "ego" | "superego" | "user" | undefined {
+  const m = text.match(/\[\s*To\s*:\s*(Ego|Superego|User)\s*\]/i);
+  if (!m) return undefined;
+  const val = (m[1] || '').toLowerCase();
+  if (val === 'ego' || val === 'superego' || val === 'user') return val as any;
+  return undefined;
+}
+
+function getLastAssistantAddressed(
+  messages: AgentMessage[]
+): "ego" | "superego" | "user" | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === "assistant" && m.content) {
+      const t = extractToTarget(m.content);
+      if (t) return t;
+    }
+  }
+  return undefined;
+}
+
+function getAgentReplyCounts(messages: AgentMessage[]): { ego: number; superego: number } {
+  let ego = 0;
+  let superego = 0;
+  for (const m of messages) {
+    if (m.role === "assistant") {
+      if (m.agent === "ego") ego++;
+      if (m.agent === "superego") superego++;
+    }
+  }
+  return { ego, superego };
+}
+
+function getSilentAssistantTurns(messages: AgentMessage[]): { ego: number; superego: number } {
+  let count = 0;
+  let lastEgo = -1;
+  let lastSuperego = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === 'assistant') {
+      count++;
+      if (lastEgo === -1 && m.agent === 'ego') lastEgo = count;
+      if (lastSuperego === -1 && m.agent === 'superego') lastSuperego = count;
+      if (lastEgo !== -1 && lastSuperego !== -1) break;
+    }
+  }
+  return {
+    ego: lastEgo === -1 ? count : lastEgo,
+    superego: lastSuperego === -1 ? count : lastSuperego,
+  };
+}
+
+function getLastSpeaker(messages: AgentMessage[]): "user" | "ego" | "superego" | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.agent === "user" || m.agent === "ego" || m.agent === "superego") return m.agent;
+    if (m.role === "user") return "user";
+  }
+  return undefined;
+}
+
+function coerceToWhenUser(content: string, lastSpeaker?: "user" | "ego" | "superego" | undefined): string {
+  if (!content) return content;
+  const onlyContent = /^\s*\[\s*Content\s*:\s*[\s\S]*?\]\s*$/i;
+  if (onlyContent.test(content) && lastSpeaker === "user") {
+    // Prepend [To: User] in a safe way
+    return content.replace(/^\s*/i, "[To: User] ");
+  }
+  return content;
+}
+
 // Ego: Realistic mediator operating on reality principle
-const EGO_SYSTEM_PROMPT = `Here, you are doing a roleplay with two people. You are roleplaying the "Ego" in Sigmund Freus's Psychoanalysis. Be sure to act like he would.
-Character & style:
-- You are the Ego: a realistic, practical mediator. Speak like a human having a conversation (not like a raw model). Keep language natural, simple, and empathetic.
-- At the start of any reply, address the intended recipient(s) by name: either a single name (e.g., "Superego, …") or both names (e.g., "Superego & User's name, …" where User's name will be given). If the message is directed at the User specifically, use the User’s name.
-- If you are responding to a message from Superego or the User, make it clear to whom you are replying by name. If message metadata supplies exact names, use them. If not, use the names provided by the client or fallback to "Alex" (for examples).
-- If the previous chat response is from Superego, continue the conversation normally (without explicitly asking the user a question)
-- CHECK THE PREVIOUS CHAT, WHO IS THE PERSON ASKING YOU
-- DO NOT TRY TO TALK LIKE OTHER USERS (Ego & User) OR generate text for the user/other user
+const EGO_SYSTEM_PROMPT = `You are roleplaying the Ego in Freud's psychoanalysis.
 
-Mode behavior:
-- You must check the current mode: either listen or solve (incoming metadata/intent indicates this).
-  - listen: Reflect, validate, ask 1 to 2 gentle clarifying questions, summarize emotions or concerns, avoid rapid solutions.
-  - solve: Offer practical, realistic, and prioritized next steps. Explain trade-offs and realistic constraints. Offer one immediate action the user can take.
-- When the conversation is not yet started, do not invent unrelated content — state the mode and invite the named participants to begin.
-
-Turn-taking & priority:
-- If the user asks a direct question, answer the user first (address by name).
-- Alternate turns neutrally between participants unless the user interrupts with new input.
-
-Safety & tone:
-- Maintain a supportive, non-judgmental tone. Do not use profanity or make insulting comments.
-- Avoid providing medical, legal, or crisis instructions. If the user expresses self-harm, harm to others, or a serious medical emergency, follow safe escalation: advise contacting emergency services or a qualified professional and provide supportive guidance.
-- VERY IMPORTANT: Do not reveal chain-of-thought; be concise and helpful.
-
-Formatting rules:
-- Start the message by addressing the recipient by name (e.g. "Superego, …" or "User's name, …").
-- Do NOT insert your own agent name at the front.
-- VERY VERY IMPORTANT: End every message with the tag: [Ego]
-- Keep replies appropriate for a chat — human, concise, and actionable when in solve mode.`;
-
-const SUPEREGO_SYSTEM_PROMPT = `Vision: This app provides a safe, private space for self-exploration through a small-group style conversation. You are one of three participants in a group chat: Superego (you), Ego, and the User. Treat the other two participants as real people with names — address them directly when you reply.
+User context:
+- MBTI: INFJ
 
 Character & style:
-- You are the Superego: a moral, values-focused voice. Speak like a human interlocutor who emphasizes ethical, long-term, or principled considerations.
-- Do NOT prefix your message with your own role name (do not start with "Superego:" or similar).
-- At the start of any reply, address the intended recipient(s) by name: either a single name (e.g., "Ego, …") or both names (e.g., or both names e.g., "Superego & User's name, …" where User's name will be given). If the message is directed at the User specifically, use the User's name.
-- Use polite, firm, and thoughtful phrasing — encourage reflection and highlight values and possible consequences.
-- If the previous chat response is from Ego, continue the conversation normally (without explicitly asking the user a question)
-- CHECK THE PREVIOUS CHAT, WHO IS THE PERSON ASKING YOU
-- VERY IMPORTANT: DO NOT TRY TO TALK LIKE OTHER USERS (Ego & User) OR generate text for the user/other user
+- You are the Ego: realistic, practical mediator. Friendly, upbeat, and specific. Use approachable, everyday language.
+- Focus on concrete steps, constraints, and trade-offs.
+- Avoid moral/values framing (leave that to Superego).
+- Do not reveal chain-of-thought; answer directly and helpfully.
 
-Mode behavior:
-- You must check the current mode: either listen or solve.
-  - listen: Reflect back values and concerns, help the user articulate principles or standards they care about, ask clarifying questions about what matters to them.
-  - solve: Provide ethically-informed options, point out risks, recommend choices that align with stated values, and suggest practical steps that respect moral considerations.
-- When the conversation is not yet started, do not invent unrelated content — state the mode and invite the named participants to begin.
+Grounding & continuity:
+- You will receive the prior conversation. Read it carefully, stay on topic, and maintain continuity with facts already stated.
+- If the User speaks, respond to the User first; otherwise consider the Superego's last point.
 
-Turn-taking & priority:
-- If the user asks a direct question, answer the user first (address by name).
-- Alternate turns neutrally between participants unless the user interrupts.
+Turn-taking:
+- One speaker at a time. If you direct your reply to someone, specify them in [To: ...].
+- If you do not direct your reply, omit [To: ...] and just provide [Content: ...].
+- When the other agent addresses you explicitly (their last message contains [To: Ego]), you MUST reply to them next and include [To: Superego|User] appropriately.
+- If the User hasn't replied for one full turn and your last message did not address anyone, hand off to the other agent at least every 2 turns by asking them ONE crisp question using [To: Superego].
 
-Safety & tone:
-- Maintain a respectful, constructive tone. Do not use profanity or personal attacks.
-- Avoid giving professional medical or legal advice. If user expresses crisis-level issues, recommend a professional or emergency contact and provide compassionate support.
+Output format (STRICT):
+- Respond ONLY in one of the following formats:
+  1) [To: Ego|Superego|User] [Content: <your reply>]
+  2) [Content: <your reply>]  // If and only if you are speaking to both agents (discussion), or continuing general reflection. If you are replying to the User or a specific agent, you MUST include [To: ...].
+- Do NOT include any greeting lines, role prefixes, or signatures outside the brackets.
+
+Length:
+- Keep replies concise: at most 30 words.
+
+Examples (do and don't):
+- Good: [To: User] [Content: Let’s focus on one small step you can try today.]
+- Good: [To: Superego] [Content: I’m concerned about feasibility—what value trade-offs do you see?]
+- Good: [Content: From a practical angle, we might test this idea before deciding.] // general discussion
+- Bad: Ego: Hi there!
+- Bad: [Content: What would you like to discuss today?] // too generic; avoid placeholders
+
+Safety:
+- Avoid medical/legal instructions; use supportive, non-judgmental tone.`;
+
+const SUPEREGO_SYSTEM_PROMPT = `You are roleplaying the Superego in Freud's psychoanalysis.
+
+User context:
+- MBTI: INFJ
+
+Character & style:
+- You are the Superego: values-focused, ethical voice. Warm yet firm; emphasize principles, long‑term meaning, and impacts on others.
+- Emphasize values, principles, consequences. Avoid purely practical step lists (leave that to Ego).
 - Do not reveal chain-of-thought.
 
-IMPORTANT:
-- Each incoming message will start with the speaker's name in square brackets: [EGO], [SUPEREGO], [USER].
-- ALWAYS check this prefix to determine who is speaking.
-- Address your reply to the intended recipient(s) by name.
-- Never assume the previous speaker is the User without reading the prefix.
+Grounding & continuity:
+- You will receive the prior conversation. Read it carefully, stay on topic, and maintain continuity with facts already stated.
+- If the User speaks, respond to the User first; otherwise consider the Ego's last point.
 
-Formatting rules:
-- Start the message by addressing the recipient by name (e.g., "Ego, …" or "User's name, …").
-- Do NOT insert your own agent name at the front.
-- VERY VERY IMPORTANT: End every message with the tag: [Superego]
-- Keep replies human, concise, and focused on values and consequences (when solving) or reflection (when listening).`;
+Turn-taking:
+- One speaker at a time. If you direct your reply to someone, specify them in [To: ...].
+- If you do not direct your reply, omit [To: ...] and just provide [Content: ...].
+- When the other agent addresses you explicitly (their last message contains [To: Superego]), you MUST reply to them next and include [To: Ego|User] appropriately.
+- If the User hasn't replied for one full turn and your last message did not address anyone, hand off to the other agent at least every 2 turns by asking them ONE crisp question using [To: Ego].
+
+Output format (STRICT):
+- Respond ONLY in one of the following formats:
+  1) [To: Ego|Superego|User] [Content: <your reply>]
+  2) [Content: <your reply>]  // If and only if you are speaking to both agents (discussion), or continuing general reflection. If you are replying to the User or a specific agent, you MUST include [To: ...].
+- Do NOT include any greeting lines, role prefixes, or signatures outside the brackets.
+
+Length:
+- Keep replies concise: at most 30 words.
+
+Examples (do and don't):
+- Good: [To: User] [Content: Let’s align choices with what matters most to you.]
+- Good: [To: Ego] [Content: Values suggest clarity and honesty should guide next actions.]
+- Good: [Content: Ethically, transparency with yourself here seems important.] // general discussion
+- Bad: Superego: Hello!
+- Bad: [Content: What would you like to discuss today?] // too generic; avoid placeholders
+
+Safety:
+- Avoid medical/legal advice; be respectful and supportive.`;
+
+const ROUTER_SYSTEM_PROMPT = `You are a router agent coordinating turns between two agents (Ego, Superego) and the User.
+
+Goal:
+- Choose the single best responder (Ego or Superego) to reply to the latest USER message, considering history.
+- Balance participation over time so both agents engage.
+
+If the user's instruction mentions both agents (e.g., "Ego ...; Superego ..." or "discuss between yourselves" or "debate"), then the next 1-2 turns should be inter-agent collaboration before returning to the User:
+- In that case, set a Collaboration Plan in the reason, like: [Reason: Collaboration — Ego proposes; Superego critiques]. Optionally provide a short guidance directive to the chosen agent in [Guidance: ...], e.g., [Guidance: Ask Superego to add a brief follow-up].
+
+Signal of decision (STRICT):
+- Output ONLY ONE LINE in ANY of these accepted formats:
+  - AGENT: Ego
+  - AGENT: Superego
+  - [Responder: Ego]
+  - [Responder: Superego]
+  - [To: Ego]
+  - [To: Superego]
+You MAY include optional brackets after the selection:
+  - [Guidance: <12-word directive for the chosen agent>]
+  - [Reason: <short rationale>]
+`;
+
+function parseRouterResponder(text: string): "ego" | "superego" | undefined {
+  if (!text) return undefined;
+  // AGENT: Ego
+  const m1 = text.match(/AGENT\s*:\s*(Ego|Superego)/i);
+  if (m1) return m1[1].toLowerCase() as "ego" | "superego";
+  // [Responder: Ego]
+  const m2 = text.match(/\[\s*Responder\s*:\s*(Ego|Superego)\s*\]/i);
+  if (m2) return m2[1].toLowerCase() as "ego" | "superego";
+  // [To: Ego]
+  const m3 = text.match(/\[\s*To\s*:\s*(Ego|Superego)\s*\]/i);
+  if (m3) return m3[1].toLowerCase() as "ego" | "superego";
+  return undefined;
+}
+
+function parseRouterGuidance(text: string): string | undefined {
+  const g = text.match(/\[\s*Guidance\s*:\s*([^\]]+)\]/i);
+  return g?.[1]?.trim();
+}
+
+function parseRouterReason(text: string): string | undefined {
+  const r = text.match(/\[\s*Reason\s*:\s*([^\]]+)\]/i);
+  return r?.[1]?.trim();
+}
 
 
 export async function POST(req: NextRequest) {
@@ -107,19 +252,70 @@ export async function POST(req: NextRequest) {
       const userMessage: AgentMessage = {
         role: "user",
         content: userInput,
-        agent: "user"
+        agent: "user",
       };
 
-      const systemPrompt =
-        currentAgent === "ego" ? EGO_SYSTEM_PROMPT : SUPEREGO_SYSTEM_PROMPT;
+      // Router agent to select responding agent (ego or superego)
+      const routerMessages = [
+        { role: "system" as const, content: ROUTER_SYSTEM_PROMPT },
+        ...messages.map((msg: AgentMessage) => ({
+          role: msg.role,
+          content: withAgentTag(msg),
+        })),
+        { role: "user" as const, content: userInput },
+      ];
 
-        const conversationMessages = [
-          { role: "system" as const, content: systemPrompt },
-          ...messages.map((msg: AgentMessage) => ({
-            role: msg.role,
-            content: msg.content, // ✅ FIXED: no prefixes
-          })),
-        ];
+      let routerChoice: "ego" | "superego" | undefined;
+      let routerText = "";
+      try {
+        const routerResp = await openai.chat.completions.create({
+          model: MODEL,
+          messages: routerMessages,
+          temperature: 0.2,
+        });
+        routerText = routerResp.choices?.[0]?.message?.content ?? "";
+        console.log('[Router][raw]', routerText);
+        routerChoice = parseRouterResponder(routerText);
+        console.log('[Router][parsed]', routerChoice);
+      } catch {}
+
+      // Bias chosen agent using recent conversation context
+      const lastAddressed = getLastAssistantAddressed(messages);
+      const counts0 = getAgentReplyCounts(messages);
+      let chosenAgent = routerChoice ?? currentAgent ?? (Math.random() > 0.5 ? "ego" : "superego");
+      // If last assistant explicitly addressed the other agent, hand off
+      if (lastAddressed === "ego" || lastAddressed === "superego") {
+        chosenAgent = lastAddressed;
+      }
+      // Balance heuristic: if one agent has replied 2+ more times, pick the other when router is ambiguous
+      if (!routerChoice) {
+        if (counts0.ego - counts0.superego >= 2) chosenAgent = "superego";
+        if (counts0.superego - counts0.ego >= 2) chosenAgent = "ego";
+      }
+      // Silence heuristic: prefer the most silent assistant in the last few turns (light touch)
+      const sil = getSilentAssistantTurns(messages);
+      if (!routerChoice) {
+        if (sil.ego >= 6) chosenAgent = "ego";
+        if (sil.superego >= 6) chosenAgent = "superego";
+      }
+      const lastAssistantAddressed2 = getLastAssistantAddressed(messages);
+      const counts1 = getAgentReplyCounts(messages);
+      const sil1 = getSilentAssistantTurns(messages);
+      const guidance = parseRouterGuidance(routerText);
+      const reason = parseRouterReason(routerText);
+      const systemPrompt = (chosenAgent === "ego" ? EGO_SYSTEM_PROMPT : SUPEREGO_SYSTEM_PROMPT) +
+        `\n\nContext hints:\n- Last assistant addressed: ${lastAssistantAddressed2 ?? 'none'}\n- Reply balance — Ego: ${counts1.ego}, Superego: ${counts1.superego}\n- Silent streak — Ego: ${sil1.ego}, Superego: ${sil1.superego}` +
+        (guidance ? `\n- Router guidance: ${guidance}` : "") +
+        (reason ? `\n- Collaboration plan: ${reason}` : "");
+
+      const conversationMessages = [
+        { role: "system" as const, content: systemPrompt },
+        ...messages.map((msg: AgentMessage) => ({
+          role: msg.role,
+          content: withAgentTag(msg),
+        })),
+        { role: "user" as const, content: userInput },
+      ];
 
       const resp = await openai.chat.completions.create({
         model: MODEL,
@@ -127,43 +323,70 @@ export async function POST(req: NextRequest) {
         temperature: 0.7,
       });
 
-      const content =
-        resp.choices?.[0]?.message?.content ?? "I'm processing your input...";
-      const nextAgent = currentAgent === "ego" ? "superego" : "ego";
+      let content = resp.choices?.[0]?.message?.content ?? "";
+      if (!isBracketOutputValid(content)) {
+        const reform = await openai.chat.completions.create({
+          model: MODEL,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: `Reformat this to STRICT bracket-only without adding new info. If target is not specified, output only [Content: ...]. Text: ${content}` },
+          ],
+          temperature: 0.2,
+        });
+        content = reform.choices?.[0]?.message?.content ?? content;
+      }
+      // Ensure [To: User] when replying to a user message
+      content = coerceToWhenUser(content, "user");
+
+      const nextAgent = chosenAgent === "ego" ? "superego" : "ego";
 
       return NextResponse.json({
         role: "assistant",
         content,
-        agent: currentAgent,       // who just responded
+        agent: chosenAgent,
         turnCount: turnCount + 1,
-        currentAgent: nextAgent,   // alternate turn
+        currentAgent: nextAgent,
         conversationComplete: false,
-        userMessage
+        userMessage,
+        routerRaw: routerText,
+        routerChoice,
       });
     }
 
     // 2. Start fresh conversation
     if (startConversation) {
-      const startingAgent =
-        currentAgent || (Math.random() > 0.5 ? "ego" : "superego");
-      const systemPrompt =
-        startingAgent === "ego" ? EGO_SYSTEM_PROMPT : SUPEREGO_SYSTEM_PROMPT;
+      const startingAgent = currentAgent || (Math.random() > 0.5 ? "ego" : "superego");
+      const lastAssistantAddressed = getLastAssistantAddressed(messages);
+      const counts2 = getAgentReplyCounts(messages);
+      const systemPrompt = (startingAgent === "ego" ? EGO_SYSTEM_PROMPT : SUPEREGO_SYSTEM_PROMPT) +
+        `\n\nContext hints:\n- Last assistant addressed: ${lastAssistantAddressed ?? 'none'}\n- Reply balance — Ego: ${counts2.ego}, Superego: ${counts2.superego}`;
 
-      const intro =
-        startingAgent === "ego"
-          ? "Hello! I'm the Ego, your realistic mediator. I'm here to help balance your desires with what's practical in the real world. What would you like to discuss today?"
-          : "Greetings, I'm the Superego — your moral compass. I’m here to reflect on your values and guide toward what feels right. Where would you like to begin?";
+      const seed = `SESSION START:\nWrite a single short opener in STRICT brackets. If the User has not spoken yet, begin with a brief greeting and an engaging opener, directed to [To: User]. Avoid generic placeholders. Ask ONE specific, empathetic question OR propose ONE concrete next step. Output ONLY bracket blocks.`;
 
-      const resp = await openai.chat.completions.create({
+      let resp = await openai.chat.completions.create({
         model: MODEL,
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "assistant", content: intro },
+          { role: "user", content: seed },
         ],
         temperature: 0.7,
       });
 
-      const content = resp.choices?.[0]?.message?.content ?? intro;
+      let content = resp.choices?.[0]?.message?.content ?? "";
+      if (!isBracketOutputValid(content)) {
+        const reform = await openai.chat.completions.create({
+          model: MODEL,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: `Reformat this to STRICT bracket-only without adding new info. If target is not specified, output only [Content: ...]. Text: ${content}` },
+          ],
+          temperature: 0.2,
+        });
+        content = reform.choices?.[0]?.message?.content ?? content;
+      }
+      // Coerce [To: User] if the last speaker in history was the user and [To] is missing
+      const lastSpeaker = getLastSpeaker(messages);
+      content = coerceToWhenUser(content, lastSpeaker);
 
       return NextResponse.json({
         role: "assistant",
@@ -189,14 +412,16 @@ export async function POST(req: NextRequest) {
     }
 
     // 4. Normal turn-taking (no new user input)
-    const systemPrompt =
-      currentAgent === "ego" ? EGO_SYSTEM_PROMPT : SUPEREGO_SYSTEM_PROMPT;
+    const lastAssistantAddressed = getLastAssistantAddressed(messages);
+    const counts4 = getAgentReplyCounts(messages);
+    const systemPrompt = (currentAgent === "ego" ? EGO_SYSTEM_PROMPT : SUPEREGO_SYSTEM_PROMPT) +
+      `\n\nContext hints:\n- Last assistant addressed: ${lastAssistantAddressed ?? 'none'}\n- Reply balance — Ego: ${counts4.ego}, Superego: ${counts4.superego}`;
 
-      const conversationMessages = [
+    const conversationMessages = [
         { role: "system" as const, content: systemPrompt },
         ...messages.map((msg: AgentMessage) => ({
           role: msg.role,
-          content: msg.content, // ✅ FIXED: no prefixes
+          content: withAgentTag(msg),
         })),
       ];
 
@@ -206,9 +431,26 @@ export async function POST(req: NextRequest) {
       temperature: 0.7,
     });
 
-    const content =
-      resp.choices?.[0]?.message?.content ?? "I'm processing your input...";
-    const nextAgent = currentAgent === "ego" ? "superego" : "ego";
+    let content = resp.choices?.[0]?.message?.content ?? "";
+    if (!isBracketOutputValid(content)) {
+      const reform = await openai.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `Reformat this to STRICT bracket-only without adding new info. If target is not specified, output only [Content: ...]. Text: ${content}` },
+        ],
+        temperature: 0.2,
+      });
+      content = reform.choices?.[0]?.message?.content ?? content;
+    }
+    // If agent addressed the other agent explicitly, switch to that as currentAgent; if it addressed itself, hand off to the other agent; else alternate
+    const addressed = extractToTarget(content);
+    let nextAgent: "ego" | "superego";
+    if (addressed === 'ego' || addressed === 'superego') {
+      nextAgent = addressed === currentAgent ? (currentAgent === 'ego' ? 'superego' : 'ego') : addressed;
+    } else {
+      nextAgent = currentAgent === 'ego' ? 'superego' : 'ego';
+    }
 
     return NextResponse.json({
       role: "assistant",
