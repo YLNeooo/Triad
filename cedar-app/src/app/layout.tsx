@@ -4,6 +4,7 @@ import { Geist, Geist_Mono, Inknut_Antiqua } from "next/font/google";
 import "./globals.css";
 import ClientProviders from "./ClientProviders";
 import FirebaseAuthProvider from "./FirebaseAuthProvider";
+import TopBarUserMenu from "@/components/TopBarUserMenu";
 
 // Define fonts
 const geistSans = Geist({
@@ -34,6 +35,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${geistSans.variable} ${geistMono.variable} ${inknut.variable} antialiased`}>
         <FirebaseAuthProvider>
           <ClientProviders>
+            <TopBarUserMenu />
             {children}
           </ClientProviders>
         </FirebaseAuthProvider>
