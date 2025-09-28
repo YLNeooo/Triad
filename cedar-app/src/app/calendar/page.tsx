@@ -532,16 +532,6 @@ export default function CalendarPage() {
       />
       
       <div className={`transition-all duration-300 ${sidebarOpen ? 'ml-80' : 'ml-0'}`}>
-        {/* Header with menu button */}
-        <div className="fixed top-4 left-4 z-40">
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-3 rounded-lg bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 transition-colors"
-          >
-            <Menu className="w-5 h-5 text-white" />
-          </button>
-        </div>
-        
         <CalendarHeatmap data={engagementData} currentPeriod={currentPeriod} setCurrentPeriod={setCurrentPeriod} />
       </div>
     </TriadBackground>
