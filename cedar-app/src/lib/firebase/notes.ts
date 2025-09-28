@@ -24,7 +24,8 @@ export type Note = {
   };
   createdAt?: any;
   updatedAt?: any;
-};
+  isConversation?: boolean;
+} & Record<string, any>;
 
 export type NoteCreateData = Omit<Note, "id" | "createdAt" | "updatedAt">;
 
