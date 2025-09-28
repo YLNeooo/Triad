@@ -142,7 +142,7 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
   const nodes = [
     {
       id: 0,
-      name: 'User',
+      name: displayName ?? 'User',
       icon: <User className="w-8 h-8" />,
     },
     {
@@ -713,7 +713,7 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
                     'text-right pr-2 font-semibold',
                     m.agent === 'user' ? 'text-green-700' : m.agent === 'ego' ? 'text-blue-700' : 'text-purple-700'
                   )}>
-                    {m.agent === 'user' ? 'User' : m.agent === 'ego' ? 'Ego' : 'Superego'}:
+                    {m.agent === 'user' ? (displayName ?? 'User') : m.agent === 'ego' ? 'Ego' : 'Superego'}:
                   </div>
                   <div className="text-gray-900 dark:text-gray-100 leading-relaxed">
                     {m.content}
