@@ -62,18 +62,25 @@ export default function TopBarUserMenu() {
           {user ? (
             <>
               <Link
-                href="/welcome"
+                href="/"
                 className="block rounded-lg px-3 py-2 hover:bg-white/10"
                 role="menuitem"
               >
                 Home
               </Link>
               <Link
-                href="/profile"
+                href="/dashboard"
                 className="block rounded-lg px-3 py-2 hover:bg-white/10"
                 role="menuitem"
               >
-                Edit profile
+                Dashboard
+              </Link>
+              <Link
+                href="/boarding/mbti"
+                className="block rounded-lg px-3 py-2 hover:bg-white/10"
+                role="menuitem"
+              >
+                Edit MBTI
               </Link>
               <button
                 onClick={async () => {

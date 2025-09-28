@@ -32,7 +32,7 @@ async function upsertUserDoc(params: {
 async function routeByMbti(uid: string, router: ReturnType<typeof useRouter>) {
   const snap = await getDoc(doc(db, "users", uid));
   const mbti = snap.exists() ? (snap.data() as any)?.mbti : undefined;
-  router.replace(mbti ? "/welcome" : "/boarding");
+  router.replace(mbti ? "/dashboard" : "/boarding");
 }
 
 export default function LoginPage() {
