@@ -20,7 +20,7 @@ export default function Page() {
             TRIAD
           </h1>
           <p className="mt-6 text-lg md:text-xl text-slate-200/80">
-            Message here
+            One mind. Three voices.
           </p>
 
           <div className="mt-14 flex justify-center gap-4">
@@ -35,7 +35,7 @@ export default function Page() {
             >
               {loading ? "…" : user ? "Go to Dashboard" : "Get Started Today"}
             </Link>
-            <Link
+            {/* <Link
               href="/test-notes"
               className="rounded-2xl border-4 px-10 py-3 text-lg tracking-wide
                          border-white/70 hover:border-white/90
@@ -55,7 +55,7 @@ export default function Page() {
             >
               <Calendar className="w-5 h-5" />
               Calendar
-            </Link>
+            </Link> */}
           </div>
         </div>
       </section>
