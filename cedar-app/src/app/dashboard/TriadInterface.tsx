@@ -2,18 +2,18 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, useMotionValue, useTransform, animate } from 'motion/react';
-import { Brain, Shield, User, Play, Square, RotateCcw } from 'lucide-react';
+import { Brain, Shield, User, Play, Square, RotateCcw, Send } from 'lucide-react';
 import Container3D from '@/cedar/components/containers/Container3D';
 import Flat3dContainer from '@/cedar/components/containers/Flat3dContainer';
 import { TriadBackground } from '@/cedar/components/backgrounds/TriadBackground';
 import { cn, useCedarStore } from 'cedar-os';
-import { HumanInTheLoopIndicator } from '@/cedar/components/chatInput/HumanInTheLoopIndicator';
 import { useAuth } from '../FirebaseAuthProvider';
 import { createNote } from '@/lib/firebase/notes';
 import { getUserProfile } from '@/lib/userProfile';
 import { getTopNotes } from '@/lib/firebase/notes';
 import GlassyPaneContainer from '@/cedar/components/containers/GlassyPaneContainer';
 // Cedar side panel and voice removed per requirements
+
 import {
   AgentMessage,
   AgentRole,
@@ -33,7 +33,6 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
   const [mounted, setMounted] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [userInput, setUserInput] = useState<string>("");
-  const [hitlState, setHitlState] = useState<"suspended" | "resumed" | "cancelled" | "timeout" | null>(null);
   const continueTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const rotation = useMotionValue(0);
@@ -84,6 +83,9 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [mbti, setMbti] = useState<string | null>(null);
   const [userNotes, setUserNotes] = useState<{ title: string; content: string; createdAt: string }[]>([]);
+  const [pastChats, setPastChats] = useState<Array<{ id: string; title?: string; lastMessage?: string; timestamp?: string; messageCount?: number }>>([]);
+  const [isLoadingPast, setIsLoadingPast] = useState<boolean>(false);
+  const [hoverPreview, setHoverPreview] = useState<{ title: string; content: string } | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -136,6 +138,28 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
       }
     };
     void fetchNotes();
+    return () => { cancelled = true; };
+  }, [user?.uid]);
+
+  // Load past chats for left panel
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (!user?.uid) { setPastChats([]); return; }
+      setIsLoadingPast(true);
+      try {
+        const res = await fetch(`/api/conversations/history?userId=${encodeURIComponent(user.uid)}`);
+        if (!res.ok) throw new Error('failed');
+        const data = await res.json();
+        if (cancelled) return;
+        setPastChats(Array.isArray(data) ? data : []);
+      } catch {
+        if (!cancelled) setPastChats([]);
+      } finally {
+        if (!cancelled) setIsLoadingPast(false);
+      }
+    };
+    void load();
     return () => { cancelled = true; };
   }, [user?.uid]);
 
@@ -457,17 +481,13 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
 
   const stopConversation = () => {
     setConversation((prev) => ({ ...prev, isRunning: false }));
-    setHitlState('suspended');
     if (continueTimerRef.current) {
       clearTimeout(continueTimerRef.current);
       continueTimerRef.current = null;
     }
-    // Add HITL marker to Cedar store
-    store.addMessage?.({ role: 'assistant', type: 'humanInTheLoop', state: 'suspended' as any });
   };
 
   const resumeConversation = () => {
-    setHitlState('resumed');
     setConversation((prev) => ({ ...prev, isRunning: true }));
     // Nudge the loop
     continueTimerRef.current = setTimeout(() => continueConversation(), 100);
@@ -526,8 +546,6 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
     });
     setUserInput("");
     setIsLoading(false);
-    setHitlState(null);
-    store.addMessage?.({ role: 'assistant', type: 'humanInTheLoop', state: 'cancelled' as any });
     // Reset rotation to put User at bottom
     setActiveNode(0);
     bottomNodeRef.current = 0;
@@ -538,7 +556,7 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
 
   return (
     <TriadBackground className={cn("w-full h-screen", className)}>
-        <div className="relative w-full h-full overflow-hidden">
+        <div className="relative w-full h-full overflow-hidden pb-[calc(env(safe-area-inset-bottom)+2rem)]">
           {/* Controls overlay */}
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20">
             <Container3D className="px-3 py-2 flex items-center gap-2">
@@ -591,24 +609,19 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
             </div>
           )}
 
-          {/* Human-in-the-loop indicator */}
-          {hitlState && (
-            <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20">
-              <HumanInTheLoopIndicator state={hitlState} />
-            </div>
-          )}
+          {/* Human-in-the-loop indicator removed */}
 
           {/* User input overlay */}
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 w-full max-w-xl px-4">
-            <Container3D className="w-full p-3">
-              <div className="flex gap-2 items-center">
+          <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+4rem)] left-1/2 -translate-x-1/2 z-20 w-full max-w-xl px-4">
+            <Container3D className="w-full p-2 bg-white/20 dark:bg-black/20">
+              <div className="flex gap-3 items-center px-4 py-2.5">
                 <input
                   type="text"
                   value={userInput}
                   onChange={(e) => setUserInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && sendUser()}
                   placeholder="Speak as User…"
-                  className="flex-1 px-3 py-2 rounded-md bg-white/90 text-gray-900 focus:outline-none"
+                  className="flex-1 px-3 py-1.5 bg-transparent text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-white/60 focus:outline-none"
                   disabled={isLoading}
                 />
                 {conversation.isRunning && (
@@ -623,16 +636,18 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
                 <button
                   onClick={sendUser}
                   disabled={!userInput.trim() || isLoading}
-                  className="px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                  className="px-2.5 py-1.5 rounded-full bg-transparent text-white hover:bg-white/10 border border-white/20 disabled:opacity-50"
+                  aria-label="Send"
+                  title="Send"
                 >
-                  Send
+                  <Send className="w-4 h-4" />
                 </button>
               </div>
             </Container3D>
           </div>
 
           <div className="absolute inset-0 flex items-center justify-center" suppressHydrationWarning>
-            <div className="relative w-[80vh] h-[80vh] aspect-square">
+            <div className="relative w-[80vh] h-[80vh] aspect-square -translate-y-[48px]">
               <svg className="absolute inset-0 w-full h-full" viewBox="0 0 400 400">
                 <motion.circle
                   cx="200"
@@ -702,9 +717,79 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
             {/* latest assistant message centered above */}
           </div>
         </div>
+        {/* Left panel: Past chats */}
+        <div className="absolute left-8 top-24 bottom-[calc(env(safe-area-inset-bottom)+4rem)] w-[20rem] pointer-events-auto z-20">
+          <Container3D className="h-full p-3 text-sm flex flex-col bg-white/10 dark:bg-black/20 backdrop-blur-md">
+            <div className="font-semibold mb-2 flex-shrink-0">Past Chats</div>
+            <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-2">
+              {isLoadingPast ? (
+                <div className="text-gray-400">Loading…</div>
+              ) : (
+                (pastChats.length > 0 ? pastChats : userNotes.map((n, i) => ({
+                  id: `note-${i}`,
+                  title: n.title,
+                  lastMessage: n.content,
+                  timestamp: n.createdAt,
+                  messageCount: undefined,
+                }))).map((c) => {
+                  // Attempt to derive full conversation text from various shapes
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const anyC: any = c as any;
+                  const fullFromMessages = Array.isArray(anyC?.messages)
+                    ? anyC.messages.map((m: any) => (typeof m?.content === 'string' ? m.content : '')).filter(Boolean).join('\n')
+                    : '';
+                  const full = (typeof anyC?.fullContent === 'string' && anyC.fullContent)
+                    || (typeof anyC?.content === 'string' && anyC.content)
+                    || fullFromMessages
+                    || (c.lastMessage || '');
+                  return (
+                  <div
+                    key={c.id}
+                    className="p-2 rounded-md bg-white/10 dark:bg-black/20 border border-white/10 hover:bg-white/15 hover:dark:bg-black/25 cursor-pointer"
+                    onMouseEnter={() => setHoverPreview({ title: c.title || 'Conversation', content: full })}
+                    onMouseLeave={() => setHoverPreview(null)}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="font-medium text-gray-100 truncate">
+                        {c.title || 'Untitled conversation'}
+                      </div>
+                      {(c.timestamp) && (
+                        <div className="text-[11px] text-gray-400 flex-shrink-0">
+                          {new Date(c.timestamp).toLocaleDateString()}
+                        </div>
+                      )}
+                    </div>
+                    {c.lastMessage && (
+                      <div className="text-xs text-gray-300/90 mt-0.5 truncate">
+                        {c.lastMessage}
+                      </div>
+                    )}
+                    {typeof c.messageCount === 'number' && (
+                      <div className="text-[11px] text-gray-400 mt-1">
+                        {c.messageCount} messages
+                      </div>
+                    )}
+                  </div>
+                );
+                })
+              )}
+            </div>
+          </Container3D>
+        </div>
+        {/* Hover preview window-in-window */}
+        {hoverPreview && (
+          <div className="fixed left-[24rem] top-24 z-50 w-[28rem] max-w-[40vw] max-h-[60vh] pointer-events-auto">
+            <Container3D className="h-full p-4 text-sm bg-white/10 dark:bg-black/20 backdrop-blur-md">
+              <div className="font-semibold mb-2 text-gray-100 truncate">{hoverPreview.title}</div>
+              <div className="max-h-[50vh] overflow-y-auto whitespace-pre-wrap leading-relaxed text-gray-100/90">
+                {hoverPreview.content}
+              </div>
+            </Container3D>
+          </div>
+        )}
         {/* Sidebar transcript */}
-        <div className="absolute right-8 top-24 bottom-6 w-[20rem] pointer-events-auto">
-          <Container3D className="h-full p-3 text-sm flex flex-col">
+        <div className="absolute right-8 top-24 bottom-[calc(env(safe-area-inset-bottom)+4rem)] w-[20rem] pointer-events-auto">
+          <Container3D className="h-full p-3 text-sm flex flex-col bg-white/10 dark:bg-black/20 backdrop-blur-md">
             <div className="font-semibold mb-2 flex-shrink-0">Conversation</div>
             <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-2">
               {conversation.messages.map((m, idx) => (
