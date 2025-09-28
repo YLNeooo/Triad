@@ -39,7 +39,7 @@ export default function SignupPage() {
   // Redirect to welcome page if user is already authenticated
   useEffect(() => {
     if (!loading && user) {
-      router.replace("/welcome");
+      router.replace("/dashboard");
     }
   }, [loading, user, router]);
 

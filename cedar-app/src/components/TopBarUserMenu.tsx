@@ -80,7 +80,7 @@ export default function TopBarUserMenu() {
                 className="block rounded-lg px-3 py-2 hover:bg-white/10"
                 role="menuitem"
               >
-                Edit MBTI
+                Edit Profile
               </Link>
               <Link
                 href="/test-notes"

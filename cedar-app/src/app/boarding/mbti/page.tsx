@@ -6,7 +6,7 @@ import TriadBackground from "@/cedar/components/backgrounds/Background";
 import { useAuth } from "../../FirebaseAuthProvider";
 import { useRouter } from "next/navigation";
 import { db } from "@/lib/firebase/client";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
 
 /** ---------- Data Types ---------- */
 type Side = {
@@ -19,6 +19,12 @@ type Side = {
 };
 
 type NotePair = { sides: [Side, Side] };
+
+function splitDisplayName(name?: string | null) {
+  if (!name) return { first: "", last: "" };
+  const parts = name.trim().split(/\s+/);
+  return { first: parts[0] || "", last: parts.slice(1).join(" ") || "" };
+}
 
 /** ---------- Content: 4 MBTI Pairs in canonical order EI, SN, TF, JP ---------- */
 const MBTI_NOTES: NotePair[] = [
@@ -120,11 +126,42 @@ export default function BoardingPage() {
 
   // Prefill from auth displayName (best-effort)
   React.useEffect(() => {
-    if (!user?.displayName) return;
-    const parts = user.displayName.trim().split(/\s+/);
-    if (!firstName) setFirstName(parts[0] ?? "");
-    if (!lastName) setLastName(parts.slice(1).join(" ") ?? "");
-  }, [user?.displayName]); // eslint-disable-line react-hooks/exhaustive-deps
+    (async () => {
+      if (!user) return;
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        if (snap.exists()) {
+          const data = snap.data() as any;
+          // Prefer Firestore values if present
+          if (typeof data.firstName === "string" && data.firstName.trim()) {
+            setFirstName(data.firstName);
+          } else if (user.displayName) {
+            setFirstName(splitDisplayName(user.displayName).first);
+          }
+          if (typeof data.lastName === "string" && data.lastName.trim()) {
+            setLastName(data.lastName);
+          } else if (user.displayName) {
+            setLastName(splitDisplayName(user.displayName).last);
+          }
+        } else if (user.displayName) {
+          // No user doc yet → seed from Google profile
+          const { first, last } = splitDisplayName(user.displayName);
+          if (!firstName) setFirstName(first);
+          if (!lastName) setLastName(last);
+        }
+      } catch (e) {
+        console.warn("Prefill names failed:", e);
+        // fallback: try auth displayName if fields still empty
+        if (user?.displayName) {
+          const { first, last } = splitDisplayName(user.displayName);
+          if (!firstName) setFirstName(first);
+          if (!lastName) setLastName(last);
+        }
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
 
   const [saving, setSaving] = React.useState(false);
 
