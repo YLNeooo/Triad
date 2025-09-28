@@ -97,3 +97,11 @@ export async function searchNotesClient(uid: string, term: string) {
         (n.tags || []).some((t) => t.toLowerCase().includes(hay))
     );
 }
+
+// Fetch top N most recent notes for a user (default: 10)
+export async function getTopNotes(uid: string, topN: number = 10): Promise<Note[]> {
+  if (!uid) return [];
+  const q = query(notesCol(uid), orderBy("createdAt", "desc"), limit(topN));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Note[];
+}

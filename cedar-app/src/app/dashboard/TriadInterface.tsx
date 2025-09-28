@@ -10,6 +10,9 @@ import { cn, useCedarStore } from 'cedar-os';
 import { HumanInTheLoopIndicator } from '@/cedar/components/chatInput/HumanInTheLoopIndicator';
 import { useAuth } from '../FirebaseAuthProvider';
 import { createNote } from '@/lib/firebase/notes';
+import { getUserProfile } from '@/lib/userProfile';
+import { getTopNotes } from '@/lib/firebase/notes';
+import GlassyPaneContainer from '@/cedar/components/containers/GlassyPaneContainer';
 // Cedar side panel and voice removed per requirements
 import {
   AgentMessage,
@@ -78,6 +81,63 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
   // Cedar store integration for messages and human-in-the-loop markers
   const store = useCedarStore((state) => state);
   const { user } = useAuth();
+  const [displayName, setDisplayName] = useState<string | null>(null);
+  const [mbti, setMbti] = useState<string | null>(null);
+  const [userNotes, setUserNotes] = useState<{ title: string; content: string; createdAt: string }[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        if (!user?.uid) { if (mounted) setDisplayName(null); return; }
+        const prof = await getUserProfile(user.uid);
+        if (mounted) {
+          setDisplayName(prof?.displayName ?? user.displayName ?? null);
+          setMbti((prof as any)?.mbti ?? null);
+        }
+      } catch {
+        if (mounted) setDisplayName(user?.displayName ?? null);
+      }
+    };
+    void load();
+    return () => { mounted = false; };
+  }, [user?.uid]);
+
+  // Load top 10 recent notes to provide context to agents
+  useEffect(() => {
+    let cancelled = false;
+    const fetchNotes = async () => {
+      if (!user?.uid) { setUserNotes([]); return; }
+      try {
+        const list = await getTopNotes(user.uid, 10);
+        if (cancelled) return;
+        const brief = list.map((n) => {
+          const createdAtISO = (() => {
+            try {
+              // Firestore Timestamp has toDate(); otherwise assume ISO/string
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const ts: any = n.createdAt;
+              if (ts?.toDate) return ts.toDate().toISOString();
+              if (typeof ts === 'string') return new Date(ts).toISOString();
+              return new Date().toISOString();
+            } catch {
+              return new Date().toISOString();
+            }
+          })();
+          return {
+            title: n.title ?? '',
+            content: n.content ?? '',
+            createdAt: createdAtISO,
+          };
+        });
+        setUserNotes(brief);
+      } catch {
+        setUserNotes([]);
+      }
+    };
+    void fetchNotes();
+    return () => { cancelled = true; };
+  }, [user?.uid]);
 
   const nodes = [
     {
@@ -201,7 +261,7 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
   const startConversation = async () => {
     setIsLoading(true);
     try {
-      const data = await startDualAgents({ maxTurns: conversation.maxTurns });
+      const data = await startDualAgents({ maxTurns: conversation.maxTurns, userName: displayName ?? 'User', userMbti: mbti ?? 'INFJ', userNotes });
       if ((data as any)?.error) return;
 
       const { to, content } = parseDesignatedFormat(data.content ?? '');
@@ -269,6 +329,9 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
         currentAgent: overrideAgent ?? snapshot.currentAgent,
         turnCount: snapshot.turnCount,
         maxTurns: snapshot.maxTurns,
+        userName: displayName ?? 'User',
+        userMbti: mbti ?? 'INFJ',
+        userNotes,
       });
       if ((data as any)?.error) return;
       // Decide next speaker based on [To] or alternate if missing; store normalized content
@@ -317,6 +380,9 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
         turnCount: conversation.turnCount,
         maxTurns: conversation.maxTurns,
         userInput: text,
+        userName: displayName ?? 'User',
+        userMbti: mbti ?? 'INFJ',
+        userNotes,
       });
       if ((data as any)?.error) return;
       // Log router decision if present
@@ -515,6 +581,15 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
               {/* Turn counter removed per requirement */}
             </Container3D>
           </div>
+
+          {/* Greeting badge */}
+          {displayName && (
+            <div className="absolute top-4 left-4 z-20">
+          <GlassyPaneContainer className="px-4 py-2 text-white/90 backdrop-blur-md">
+            <span className="font-semibold">Hello, {displayName}{mbti ? ` · ${mbti}` : ''}</span>
+              </GlassyPaneContainer>
+            </div>
+          )}
 
           {/* Human-in-the-loop indicator */}
           {hitlState && (
