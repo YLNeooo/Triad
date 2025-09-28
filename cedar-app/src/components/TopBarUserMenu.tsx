@@ -34,7 +34,7 @@ export default function TopBarUserMenu() {
     )}`;
 
   return (
-    <div className="fixed top-4 right-4 z-50" ref={ref}>
+    <div className="relative fixed top-4 right-4 z-50 flex flex-col items-end" ref={ref}>
       <button
         onClick={() => !loading && setOpen((v) => !v)}
         disabled={loading}
@@ -57,7 +57,7 @@ export default function TopBarUserMenu() {
       {open && (
         <div
           role="menu"
-          className="mt-2 w-56 rounded-xl border border-white/20 bg-black/60 text-white backdrop-blur-md shadow-lg p-1"
+          className="absolute right-0 top-full mt-2 w-56 rounded-xl border border-white/20 bg-black/60 text-white backdrop-blur-md shadow-lg p-1"
         >
           {user ? (
             <>
@@ -88,6 +88,13 @@ export default function TopBarUserMenu() {
                 role="menuitem"
               >
                 View Notes
+              </Link>
+              <Link
+                href="/calendar"
+                className="block rounded-lg px-3 py-2 hover:bg-white/10"
+                role="menuitem"
+              >
+                View Calendar
               </Link>
               <button
                 onClick={async () => {
