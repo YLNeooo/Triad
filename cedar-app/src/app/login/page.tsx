@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { auth, googleProvider, db } from "@/lib/firebase/client";
 import { signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { useAuth } from "../FirebaseAuthProvider";
 import { TriadBackground } from "@/cedar/components/backgrounds/Background";
 
@@ -22,11 +22,17 @@ async function upsertUserDoc(params: {
       email: email ?? null,
       displayName: displayName ?? null,
       updatedAt: serverTimestamp(),
-      // createdAt only set on first write; merge keeps existing value if present
       createdAt: serverTimestamp(),
     },
     { merge: true }
   );
+}
+
+// decide where to send the user based on presence of users/{uid}.mbti
+async function routeByMbti(uid: string, router: ReturnType<typeof useRouter>) {
+  const snap = await getDoc(doc(db, "users", uid));
+  const mbti = snap.exists() ? (snap.data() as any)?.mbti : undefined;
+  router.replace(mbti ? "/welcome" : "/boarding");
 }
 
 export default function LoginPage() {
@@ -37,10 +43,13 @@ export default function LoginPage() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Redirect to welcome page if user is already authenticated
+  // If already signed in, check mbti and route accordingly
   useEffect(() => {
     if (!loading && user) {
-      router.replace("/welcome");
+      routeByMbti(user.uid, router).catch((e) => {
+        console.error("MBTI route check failed:", e);
+        router.replace("/welcome"); // safe fallback
+      });
     }
   }, [loading, user, router]);
 
@@ -51,12 +60,8 @@ export default function LoginPage() {
     try {
       const cred = await signInWithEmailAndPassword(auth, email, password);
       const u = cred.user;
-      await upsertUserDoc({
-        uid: u.uid,
-        email: u.email,
-        displayName: u.displayName,
-      });
-      router.push("/welcome");
+      await upsertUserDoc({ uid: u.uid, email: u.email, displayName: u.displayName });
+      await routeByMbti(u.uid, router);
     } catch (e: any) {
       setErr(e?.message || "Failed to sign in");
     } finally {
@@ -70,12 +75,8 @@ export default function LoginPage() {
     try {
       const cred = await signInWithPopup(auth, googleProvider);
       const u = cred.user;
-      await upsertUserDoc({
-        uid: u.uid,
-        email: u.email,
-        displayName: u.displayName,
-      });
-      router.push("/welcome");
+      await upsertUserDoc({ uid: u.uid, email: u.email, displayName: u.displayName });
+      await routeByMbti(u.uid, router);
     } catch (e: any) {
       setErr(e?.message || "Google sign-in failed");
     } finally {
@@ -153,8 +154,8 @@ export default function LoginPage() {
         {/* Sign Up Link */}
         <p className="text-center text-white/80 text-sm">
           Don't have an account?{" "}
-          <Link 
-            href="/signup" 
+          <Link
+            href="/signup"
             className="text-white hover:text-white/80 underline underline-offset-2 transition-colors duration-200"
           >
             Create one

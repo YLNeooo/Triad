@@ -168,8 +168,8 @@ export default function BoardingPage() {
         new CustomEvent("mbti:selected", { detail: { mbti: letters, detail } })
       );
 
-      alert(`Saved your MBTI: ${letters}`);
-      // router.push("/welcome");
+      // alert(`Saved your MBTI: ${letters}`);
+      router.push("/dashboard");
     } catch (e) {
       console.error("Failed to save MBTI:", e);
       alert("Failed to save MBTI. Please try again.");
