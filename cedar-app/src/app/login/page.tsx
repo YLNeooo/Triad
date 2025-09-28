@@ -4,10 +4,30 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { auth, googleProvider } from "@/lib/firebase/client";
+import { auth, googleProvider, db } from "@/lib/firebase/client";
 import { signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { useAuth } from "../FirebaseAuthProvider";
 import { TriadBackground } from "@/cedar/components/backgrounds/Background";
+
+async function upsertUserDoc(params: {
+  uid: string;
+  email?: string | null;
+  displayName?: string | null;
+}) {
+  const { uid, email, displayName } = params;
+  await setDoc(
+    doc(db, "users", uid),
+    {
+      email: email ?? null,
+      displayName: displayName ?? null,
+      updatedAt: serverTimestamp(),
+      // createdAt only set on first write; merge keeps existing value if present
+      createdAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -26,10 +46,17 @@ export default function LoginPage() {
 
   async function onEmailLogin(e: React.FormEvent) {
     e.preventDefault();
-    setErr(null); setBusy(true);
+    setErr(null);
+    setBusy(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      router.push("/"); // success
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      const u = cred.user;
+      await upsertUserDoc({
+        uid: u.uid,
+        email: u.email,
+        displayName: u.displayName,
+      });
+      router.push("/welcome");
     } catch (e: any) {
       setErr(e?.message || "Failed to sign in");
     } finally {
@@ -38,10 +65,17 @@ export default function LoginPage() {
   }
 
   async function onGoogleLogin() {
-    setErr(null); setBusy(true);
+    setErr(null);
+    setBusy(true);
     try {
-      await signInWithPopup(auth, googleProvider);
-      router.push("/");
+      const cred = await signInWithPopup(auth, googleProvider);
+      const u = cred.user;
+      await upsertUserDoc({
+        uid: u.uid,
+        email: u.email,
+        displayName: u.displayName,
+      });
+      router.push("/welcome");
     } catch (e: any) {
       setErr(e?.message || "Google sign-in failed");
     } finally {
@@ -53,9 +87,7 @@ export default function LoginPage() {
     <TriadBackground className="min-h-screen flex items-center justify-center">
       <main className="w-full max-w-sm mx-auto p-8 space-y-8">
         {/* LOGIN Title */}
-        <h1 className="text-center text-4xl text-white tracking-wide">
-          LOGIN
-        </h1>
+        <h1 className="text-center text-4xl text-white tracking-wide">LOGIN</h1>
 
         {/* Login Form */}
         <form onSubmit={onEmailLogin} className="space-y-6">

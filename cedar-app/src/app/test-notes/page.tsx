@@ -2,25 +2,30 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '@/app/FirebaseAuthProvider';
-import { useNotes } from '@/hooks/useNotes';
-import { NoteCreateData } from '@/lib/firebase/notes';
+import { useNotes, NoteCreateData } from '@/hooks/useNotes';
 import { TriadBackground } from '@/cedar/components/backgrounds/TriadBackground';
+import type { NoteCategory, NotePriority } from "@/lib/firebase/notes";
 
 export default function TestNotesPage() {
   const { user } = useAuth();
-  const username = user?.displayName || user?.email?.split('@')[0] || '';
-  const { notes, loading, error, createNote, updateNote, deleteNote, searchNotes } = useNotes({ 
-    username: username || 'test-user'
-  });
+  const uid = user?.uid || ""; // gate page on user, so safe here
+  const { notes, loading, error, createNote, updateNote, deleteNote, searchNotes } =
+  useNotes({ uid });
   
   const [newNote, setNewNote] = useState<NoteCreateData>({
-    username: username || 'test-user',
-    title: '',
-    content: '',
-    tags: [],
-    category: 'general',
-    priority: 'medium'
-  });
+  uid,
+  title: '',
+  content: '',
+  tags: [],
+  category: 'general',
+  priority: 'medium',
+  isPinned: false,
+  isArchived: false,
+  metadata: {
+    wordCount: 0,
+    characterCount: 0,
+  },
+});
   
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -30,14 +35,26 @@ export default function TestNotesPage() {
   const handleCreateNote = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await createNote(newNote);
+      await createNote({
+        title: newNote.title,
+        content: newNote.content,
+        tags: newNote.tags,
+        category: newNote.category,
+        priority: newNote.priority,
+        isPinned: newNote.isPinned,
+        isArchived: newNote.isArchived,
+        metadata: newNote.metadata,
+      });
       setNewNote({
-        username: username || 'test-user',
+        uid,
         title: '',
         content: '',
         tags: [],
         category: 'general',
-        priority: 'medium'
+        priority: 'medium',
+        isPinned: false,
+        isArchived: false,
+        metadata: { wordCount: 0, characterCount: 0 },
       });
       setTagsInput('');
       alert('Note created successfully!');
@@ -98,7 +115,7 @@ export default function TestNotesPage() {
           <h1 className="text-3xl font-bold text-white mb-2">Notes & Conversations</h1>
           <div className="bg-white/10 border border-white/20 rounded-lg p-4">
             <p className="text-white">
-              Hi, {username}
+              Hi, {uid}
             </p>
           </div>
         </div>
@@ -137,8 +154,9 @@ export default function TestNotesPage() {
                   <label className="block text-sm font-medium text-white mb-2">Category</label>
                   <select
                     value={newNote.category}
-                    onChange={(e) => setNewNote({ ...newNote, category: e.target.value })}
-                    className="w-full h-14 px-6 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 text-white focus:outline-none focus:ring-2 focus:ring-white/50 focus:border-transparent transition-all duration-200"
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                      setNewNote(prev => ({ ...prev, category: e.target.value as NoteCategory }))
+                    }
                   >
                     <option value="general">General</option>
                     <option value="work">Work</option>
