@@ -407,28 +407,14 @@ const CalendarHeatmap: React.FC<CalendarProps & { currentPeriod: number; setCurr
           </div>
         )}
 
-        {/* Legend */}
-        <div className="mt-6 flex items-center justify-between">
-          <div className="flex items-center gap-4 text-sm text-white/80">
-            <span>Less</span>
-            <div className="flex gap-1">
-              <div className="w-3 h-3 bg-gray-100 rounded-sm"></div>
-              <div className="w-3 h-3 bg-green-200 rounded-sm"></div>
-              <div className="w-3 h-3 bg-green-300 rounded-sm"></div>
-              <div className="w-3 h-3 bg-green-400 rounded-sm"></div>
-              <div className="w-3 h-3 bg-green-500 rounded-sm"></div>
-              <div className="w-3 h-3 bg-green-600 rounded-sm"></div>
-            </div>
-            <span>More</span>
+        {/* Statistics */}
+        <div className="mt-6 flex items-center justify-center gap-8 text-sm text-white/80">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4" />
+            <span>Total notes: {data.reduce((sum, item) => sum + item.count, 0)}</span>
           </div>
-          <div className="flex items-center gap-4 text-sm text-white/80">
-            <div className="flex items-center gap-2">
-              <Activity className="w-4 h-4" />
-              <span>Total notes: {data.reduce((sum, item) => sum + item.count, 0)}</span>
-            </div>
-            <div>
-              Current streak: {getCurrentStreak(data)} days
-            </div>
+          <div>
+            Current streak: {getCurrentStreak(data)} days
           </div>
         </div>
       </div>
@@ -546,16 +532,6 @@ export default function CalendarPage() {
       />
       
       <div className={`transition-all duration-300 ${sidebarOpen ? 'ml-80' : 'ml-0'}`}>
-        {/* Header with menu button */}
-        <div className="fixed top-4 left-4 z-40">
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-3 rounded-lg bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 transition-colors"
-          >
-            <Menu className="w-5 h-5 text-white" />
-          </button>
-        </div>
-        
         <CalendarHeatmap data={engagementData} currentPeriod={currentPeriod} setCurrentPeriod={setCurrentPeriod} />
       </div>
     </TriadBackground>

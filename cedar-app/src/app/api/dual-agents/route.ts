@@ -16,6 +16,12 @@ interface AgentMessage {
   agent?: "ego" | "superego" | "user";
 }
 
+type UserNoteBrief = {
+  title: string;
+  content: string;
+  createdAt: string; // ISO
+};
+
 function isBracketOutputValid(text: string): boolean {
   if (!text) return false;
   const toAndContent = /\[\s*To\s*:\s*(Ego|Superego|User)\s*\]\s*\[\s*Content\s*:\s*[\s\S]*?\]/i;
@@ -107,7 +113,8 @@ function coerceToWhenUser(content: string, lastSpeaker?: "user" | "ego" | "super
 const EGO_SYSTEM_PROMPT = `You are roleplaying the Ego in Freud's psychoanalysis.
 
 User context:
-- MBTI: INFJ
+- Name: {{USER_NAME}}
+- MBTI: {{USER_MBTI}}
 
 Character & style:
 - You are the Ego: realistic, practical mediator. Friendly, upbeat, and specific. Use approachable, everyday language.
@@ -145,7 +152,8 @@ Safety:
 const SUPEREGO_SYSTEM_PROMPT = `You are roleplaying the Superego in Freud's psychoanalysis.
 
 User context:
-- MBTI: INFJ
+- Name: {{USER_NAME}}
+- MBTI: {{USER_MBTI}}
 
 Character & style:
 - You are the Superego: values-focused, ethical voice. Warm yet firm; emphasize principles, long‑term meaning, and impacts on others.
@@ -239,6 +247,9 @@ export async function POST(req: NextRequest) {
       startConversation = false,
       userInput = "",
       summarize = false,
+      userName = "User",
+      userMbti = "INFJ",
+      userNotes = [] as UserNoteBrief[],
     } = body;
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -280,6 +291,18 @@ Guidance:
       }
       return NextResponse.json({ ok: true, title, summary, tags });
     }
+
+    // Helper: format notes into a compact context string
+    const notesContext = Array.isArray(userNotes) && userNotes.length
+      ? `\n\nUser notes (recent):\n` + userNotes.slice(0, 10).map((n: UserNoteBrief, idx: number) => {
+          const date = (() => {
+            try { return new Date(n.createdAt).toISOString().slice(0, 10); } catch { return n.createdAt; }
+          })();
+          const title = (n.title || '').trim();
+          const snippet = (n.content || '').replace(/\s+/g, ' ').slice(0, 180);
+          return `${idx + 1}. [${date}] ${title ? title + ' — ' : ''}"${snippet}"`;
+        }).join("\n")
+      : "";
 
     // 1. Handle user input
     if (userInput && userInput.trim()) {
@@ -337,10 +360,13 @@ Guidance:
       const sil1 = getSilentAssistantTurns(messages);
       const guidance = parseRouterGuidance(routerText);
       const reason = parseRouterReason(routerText);
-      const systemPrompt = (chosenAgent === "ego" ? EGO_SYSTEM_PROMPT : SUPEREGO_SYSTEM_PROMPT) +
-        `\n\nContext hints:\n- Last assistant addressed: ${lastAssistantAddressed2 ?? 'none'}\n- Reply balance — Ego: ${counts1.ego}, Superego: ${counts1.superego}\n- Silent streak — Ego: ${sil1.ego}, Superego: ${sil1.superego}` +
+      const systemPrompt = (chosenAgent === "ego" ? EGO_SYSTEM_PROMPT : SUPEREGO_SYSTEM_PROMPT)
+        .replace(/\{\{USER_NAME\}\}/g, userName)
+        .replace(/\{\{USER_MBTI\}\}/g, userMbti)
+        + `\n\nContext hints:\n- Last assistant addressed: ${lastAssistantAddressed2 ?? 'none'}\n- Reply balance — Ego: ${counts1.ego}, Superego: ${counts1.superego}\n- Silent streak — Ego: ${sil1.ego}, Superego: ${sil1.superego}` +
         (guidance ? `\n- Router guidance: ${guidance}` : "") +
-        (reason ? `\n- Collaboration plan: ${reason}` : "");
+        (reason ? `\n- Collaboration plan: ${reason}` : "") +
+        notesContext;
 
       const conversationMessages = [
         { role: "system" as const, content: systemPrompt },
@@ -392,8 +418,11 @@ Guidance:
       const startingAgent = currentAgent || (Math.random() > 0.5 ? "ego" : "superego");
       const lastAssistantAddressed = getLastAssistantAddressed(messages);
       const counts2 = getAgentReplyCounts(messages);
-      const systemPrompt = (startingAgent === "ego" ? EGO_SYSTEM_PROMPT : SUPEREGO_SYSTEM_PROMPT) +
-        `\n\nContext hints:\n- Last assistant addressed: ${lastAssistantAddressed ?? 'none'}\n- Reply balance — Ego: ${counts2.ego}, Superego: ${counts2.superego}`;
+      const systemPrompt = (startingAgent === "ego" ? EGO_SYSTEM_PROMPT : SUPEREGO_SYSTEM_PROMPT)
+        .replace(/\{\{USER_NAME\}\}/g, userName)
+        .replace(/\{\{USER_MBTI\}\}/g, userMbti)
+        + `\n\nContext hints:\n- Last assistant addressed: ${lastAssistantAddressed ?? 'none'}\n- Reply balance — Ego: ${counts2.ego}, Superego: ${counts2.superego}` +
+        notesContext;
 
       const seed = `SESSION START:\nWrite a single short opener in STRICT brackets. If the User has not spoken yet, begin with a brief greeting and an engaging opener, directed to [To: User]. Avoid generic placeholders. Ask ONE specific, empathetic question OR propose ONE concrete next step. Output ONLY bracket blocks.`;
 
@@ -448,8 +477,11 @@ Guidance:
     // 4. Normal turn-taking (no new user input)
     const lastAssistantAddressed = getLastAssistantAddressed(messages);
     const counts4 = getAgentReplyCounts(messages);
-    const systemPrompt = (currentAgent === "ego" ? EGO_SYSTEM_PROMPT : SUPEREGO_SYSTEM_PROMPT) +
-      `\n\nContext hints:\n- Last assistant addressed: ${lastAssistantAddressed ?? 'none'}\n- Reply balance — Ego: ${counts4.ego}, Superego: ${counts4.superego}`;
+    const systemPrompt = (currentAgent === "ego" ? EGO_SYSTEM_PROMPT : SUPEREGO_SYSTEM_PROMPT)
+      .replace(/\{\{USER_NAME\}\}/g, userName)
+      .replace(/\{\{USER_MBTI\}\}/g, userMbti)
+      + `\n\nContext hints:\n- Last assistant addressed: ${lastAssistantAddressed ?? 'none'}\n- Reply balance — Ego: ${counts4.ego}, Superego: ${counts4.superego}` +
+      notesContext;
 
     const conversationMessages = [
         { role: "system" as const, content: systemPrompt },
