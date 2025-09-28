@@ -5,7 +5,7 @@ import TriadBackground from "@/cedar/components/backgrounds/Background";
 import { useAuth } from "../../FirebaseAuthProvider";
 import { useRouter } from "next/navigation";
 import { db } from "@/lib/firebase/client";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
 
 /** ---------- Data Types ---------- */
 type Side = {
@@ -18,6 +18,16 @@ type Side = {
 };
 
 type NotePair = { sides: [Side, Side] };
+
+function mbtiToIsFirst(mbti: string): boolean[] {
+  const m = mbti.toUpperCase();
+  return [
+    m[0] === "E", // E vs I
+    m[1] === "S", // S vs N
+    m[2] === "T", // T vs F
+    m[3] === "J", // J vs P
+  ];
+}
 
 /** ---------- Content: 4 MBTI Pairs in canonical order EI, SN, TF, JP ---------- */
 const MBTI_NOTES: NotePair[] = [
@@ -107,10 +117,30 @@ const MBTI_NOTES: NotePair[] = [
 export default function BoardingPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
-  const [isFirst, setIsFirst] = React.useState<boolean[]>(
-    () => MBTI_NOTES.map(() => true) // default to E, S, T, J
-  );
+  const [isFirst, setIsFirst] = React.useState<boolean[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("mbti");
+      if (saved && saved.length === 4) return mbtiToIsFirst(saved);
+    }
+    return MBTI_NOTES.map(() => true); // default E/S/T/J
+  });
   const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    async function loadMbti() {
+      if (loading || !user) return;
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        const mbti = snap.exists() ? (snap.data() as any)?.mbti : undefined;
+        if (typeof mbti === "string" && mbti.length === 4) {
+          setIsFirst(mbtiToIsFirst(mbti));
+        }
+      } catch (e) {
+        console.warn("Could not load MBTI from Firestore:", e);
+      }
+    }
+    loadMbti();
+  }, [loading, user]);
 
   const handleFlipToggle = (i: number) => {
     setIsFirst((prev) => {
