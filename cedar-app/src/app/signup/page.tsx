@@ -51,7 +51,7 @@ export default function SignupPage() {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       const u = cred.user;
       await upsertUserDoc({ uid: u.uid, email: u.email, displayName: u.displayName });
-      router.push("/welcome");
+      router.push("/boarding");
     } catch (e: any) {
       setErr(e?.message || "Failed to create account");
     } finally {
@@ -66,7 +66,7 @@ export default function SignupPage() {
       const cred = await signInWithPopup(auth, googleProvider);
       const u = cred.user;
       await upsertUserDoc({ uid: u.uid, email: u.email, displayName: u.displayName });
-      router.push("/welcome");
+      router.push("/boarding");
     } catch (e: any) {
       setErr(e?.message || "Google sign-in failed");
     } finally {
