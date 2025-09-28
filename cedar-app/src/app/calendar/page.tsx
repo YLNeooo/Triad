@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { TriadBackground } from '@/cedar/components/backgrounds/Background';
 import { Calendar, ChevronLeft, ChevronRight, Activity, Menu } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
+import { useAuth } from '@/app/FirebaseAuthProvider';
 
 interface EngagementData {
   date: string;
@@ -40,9 +41,20 @@ const CalendarHeatmap: React.FC<CalendarProps & { currentPeriod: number; setCurr
     // For previous period (1): 6 full months ending 6 months ago
     // For previous period (2): 6 full months ending 12 months ago
     
-    // Calculate the end of the period (last day of the 6th month ago)
+    // Calculate the end of the period (today for current period, or 6 months ago for previous periods)
     const periodEnd = new Date(today);
-    periodEnd.setMonth(today.getMonth() - (6 * currentPeriod));
+    if (currentPeriod > 0) {
+      periodEnd.setMonth(today.getMonth() - (6 * currentPeriod));
+    }
+    // For current period (0), use today as the end date
+    // For other periods, use the calculated period end date
+    
+    // Debug: Log today's date
+    const todayYear = today.getFullYear();
+    const todayMonth = String(today.getMonth() + 1).padStart(2, '0');
+    const todayDay = String(today.getDate()).padStart(2, '0');
+    const todayStr = `${todayYear}-${todayMonth}-${todayDay}`;
+    console.log(`Today is: ${todayStr}`);
     
     // Calculate the start of the period (first day of the 6th month before periodEnd)
     const periodStart = new Date(periodEnd);
@@ -50,7 +62,17 @@ const CalendarHeatmap: React.FC<CalendarProps & { currentPeriod: number; setCurr
     periodStart.setDate(1); // First day of the month
     
     // Debug: Log the period dates
-    console.log(`Period ${currentPeriod}: ${periodStart.toISOString().split('T')[0]} to ${periodEnd.toISOString().split('T')[0]}`);
+    const startYear = periodStart.getFullYear();
+    const startMonth = String(periodStart.getMonth() + 1).padStart(2, '0');
+    const startDay = String(periodStart.getDate()).padStart(2, '0');
+    const startDateStr = `${startYear}-${startMonth}-${startDay}`;
+    
+    const endYear = periodEnd.getFullYear();
+    const endMonth = String(periodEnd.getMonth() + 1).padStart(2, '0');
+    const endDay = String(periodEnd.getDate()).padStart(2, '0');
+    const endDateStr = `${endYear}-${endMonth}-${endDay}`;
+    
+    console.log(`Period ${currentPeriod}: ${startDateStr} to ${endDateStr}`);
     
     // Create a counts array for all dates in the period
     const dateCounts: { [date: string]: number } = {};
@@ -58,10 +80,17 @@ const CalendarHeatmap: React.FC<CalendarProps & { currentPeriod: number; setCurr
     // Generate all dates in the 6-month period
     let currentDate = new Date(periodStart);
     const endDate = new Date(periodEnd);
-    endDate.setDate(periodEnd.getDate() + 1); // Include the period end date
+    // Always add 1 day to include the period end date in the loop
+    // For current period (0), this includes today
+    // For other periods, this includes the period end date
+    endDate.setDate(periodEnd.getDate() + 1);
     
     while (currentDate < endDate) {
-      const dateStr = currentDate.toISOString().split('T')[0];
+      // Use local date formatting to avoid timezone issues
+      const year = currentDate.getFullYear();
+      const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+      const day = String(currentDate.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
       const count = dataMap.get(dateStr) || 0;
       dateCounts[dateStr] = count;
       currentDate = new Date(currentDate.getTime() + 24 * 60 * 60 * 1000);
@@ -79,8 +108,13 @@ const CalendarHeatmap: React.FC<CalendarProps & { currentPeriod: number; setCurr
     // Add days from first Sunday to period start (padding days)
     let date = new Date(firstSunday);
     while (date < periodStart) {
+      // Use local date formatting to avoid timezone issues
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
       calendarData.push({
-        date: date.toISOString().split('T')[0],
+        date: dateStr,
         count: 0,
         dayOfWeek: date.getDay(),
         isCurrentYear: false
@@ -91,7 +125,11 @@ const CalendarHeatmap: React.FC<CalendarProps & { currentPeriod: number; setCurr
     // Add the selected 6 months (inclusive of both start and end dates)
     date = new Date(periodStart);
     while (date < endDate) {
-      const dateStr = date.toISOString().split('T')[0];
+      // Use local date formatting to avoid timezone issues
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
       const count = dateCounts[dateStr] || 0;
       calendarData.push({
         date: dateStr,
@@ -112,8 +150,13 @@ const CalendarHeatmap: React.FC<CalendarProps & { currentPeriod: number; setCurr
         const missingDays = firstDayOfWeek;
         for (let i = missingDays - 1; i >= 0; i--) {
           const prevDate = new Date(firstDate.getTime() - (i + 1) * 24 * 60 * 60 * 1000);
+          // Use local date formatting to avoid timezone issues
+          const year = prevDate.getFullYear();
+          const month = String(prevDate.getMonth() + 1).padStart(2, '0');
+          const day = String(prevDate.getDate()).padStart(2, '0');
+          const dateStr = `${year}-${month}-${day}`;
           calendarData.unshift({
-            date: prevDate.toISOString().split('T')[0],
+            date: dateStr,
             count: 0,
             dayOfWeek: prevDate.getDay(),
             isCurrentYear: false
@@ -127,11 +170,15 @@ const CalendarHeatmap: React.FC<CalendarProps & { currentPeriod: number; setCurr
 
   const calendarData = generateCalendarData();
 
-  // Get color intensity based on user engagement count (temporarily removed colors)
+  // Get color intensity based on user engagement count
   const getColorIntensity = (count: number, isCurrentYear: boolean) => {
     if (!isCurrentYear) return 'bg-gray-50';
-    // Temporarily show all dates in the same color for debugging
-    return 'bg-gray-200';
+    if (count === 0) return 'bg-gray-100';
+    if (count <= 1) return 'bg-green-200';
+    if (count <= 2) return 'bg-green-300';
+    if (count <= 3) return 'bg-green-400';
+    if (count <= 4) return 'bg-green-500';
+    return 'bg-green-600';
   };
 
   // Get week labels
@@ -339,7 +386,7 @@ const CalendarHeatmap: React.FC<CalendarProps & { currentPeriod: number; setCurr
                           className={`w-4 h-4 rounded-sm cursor-pointer transition-all hover:scale-110 ${getColorIntensity(day.count, day.isCurrentYear)}`}
                           onMouseEnter={() => setHoveredDate(day.date)}
                           onMouseLeave={() => setHoveredDate(null)}
-                          title={`${day.date}: ${day.count} user inputs`}
+                          title={`${day.date}: ${day.count} notes`}
                         />
                       </td>
                     );
@@ -355,18 +402,33 @@ const CalendarHeatmap: React.FC<CalendarProps & { currentPeriod: number; setCurr
             <div className="text-sm text-white">
               <strong>{new Date(hoveredDate + 'T00:00:00').toLocaleDateString()}</strong>
               <br />
-              {dataMap.get(hoveredDate) || 0} user inputs
+              {dataMap.get(hoveredDate) || 0} notes
             </div>
           </div>
         )}
 
-        <div className="mt-6 flex items-center justify-between text-sm text-white/80">
-          <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4" />
-            <span>Total user inputs this year: {data.reduce((sum, item) => sum + item.count, 0)}</span>
+        {/* Legend */}
+        <div className="mt-6 flex items-center justify-between">
+          <div className="flex items-center gap-4 text-sm text-white/80">
+            <span>Less</span>
+            <div className="flex gap-1">
+              <div className="w-3 h-3 bg-gray-100 rounded-sm"></div>
+              <div className="w-3 h-3 bg-green-200 rounded-sm"></div>
+              <div className="w-3 h-3 bg-green-300 rounded-sm"></div>
+              <div className="w-3 h-3 bg-green-400 rounded-sm"></div>
+              <div className="w-3 h-3 bg-green-500 rounded-sm"></div>
+              <div className="w-3 h-3 bg-green-600 rounded-sm"></div>
+            </div>
+            <span>More</span>
           </div>
-          <div>
-            Current streak: {getCurrentStreak(data)} days
+          <div className="flex items-center gap-4 text-sm text-white/80">
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4" />
+              <span>Total notes: {data.reduce((sum, item) => sum + item.count, 0)}</span>
+            </div>
+            <div>
+              Current streak: {getCurrentStreak(data)} days
+            </div>
           </div>
         </div>
       </div>
@@ -398,6 +460,7 @@ const getCurrentStreak = (data: EngagementData[]): number => {
 };
 
 export default function CalendarPage() {
+  const { user } = useAuth();
   const [engagementData, setEngagementData] = useState<EngagementData[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPeriod, setCurrentPeriod] = useState(0); // 0 = current, -1 = previous, 1 = next
@@ -405,8 +468,13 @@ export default function CalendarPage() {
 
   useEffect(() => {
     const fetchEngagementData = async () => {
+      if (!user?.uid) {
+        setLoading(false);
+        return;
+      }
+      
       try {
-        const response = await fetch('/api/conversations/calendar');
+        const response = await fetch(`/api/conversations/calendar?userId=${user.uid}`);
         if (response.ok) {
           const data = await response.json();
           setEngagementData(data);
@@ -424,7 +492,7 @@ export default function CalendarPage() {
     };
 
     fetchEngagementData();
-  }, []);
+  }, [user]);
 
   const generateSampleData = (): EngagementData[] => {
     const data: EngagementData[] = [];
@@ -437,7 +505,11 @@ export default function CalendarPage() {
     // Generate data for the past 6 months
     let date = new Date(sixMonthsAgo);
     while (date < endDate) {
-      const dateStr = date.toISOString().split('T')[0];
+      // Use local date formatting to avoid timezone issues
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
       
       // Random user input count (0-25) with some patterns
       const random = Math.random();
