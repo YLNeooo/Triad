@@ -49,7 +49,7 @@ export async function sendUserToDualAgents(params: {
 
 export async function summarizeConversation(params: {
   messages: AgentMessage[];
-}): Promise<{ ok: boolean; summary?: string; error?: string }> {
+}): Promise<{ ok: boolean; title?: string; summary?: string; tags?: string[]; error?: string }> {
   return postJSON('/api/dual-agents', { summarize: true, messages: params.messages });
 }
 

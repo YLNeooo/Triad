@@ -6,7 +6,7 @@ import {
 
 export type NotePriority = "low" | "medium" | "high";
 export type NoteCategory =
-  | "general" | "work" | "personal" | "ideas" | "meetings" | "projects";
+  | "general" | "work" | "personal" | "ideas" | "meetings" | "projects" | "conversation";
 
 export type Note = {
   id?: string;

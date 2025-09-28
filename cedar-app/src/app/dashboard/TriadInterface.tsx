@@ -8,6 +8,8 @@ import Flat3dContainer from '@/cedar/components/containers/Flat3dContainer';
 import { TriadBackground } from '@/cedar/components/backgrounds/TriadBackground';
 import { cn, useCedarStore } from 'cedar-os';
 import { HumanInTheLoopIndicator } from '@/cedar/components/chatInput/HumanInTheLoopIndicator';
+import { useAuth } from '../FirebaseAuthProvider';
+import { createNote } from '@/lib/firebase/notes';
 // Cedar side panel and voice removed per requirements
 import {
   AgentMessage,
@@ -75,6 +77,7 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
 
   // Cedar store integration for messages and human-in-the-loop markers
   const store = useCedarStore((state) => state);
+  const { user } = useAuth();
 
   const nodes = [
     {
@@ -408,9 +411,36 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
     // Summarize current messages (excluding system-only fields if any)
     try {
       const result = await summarizeConversation({ messages: conversation.messages });
-      const summary = (result as any)?.summary || 'No summary available.';
-      // Show summary inline above the transcript for now
-      alert(summary);
+      const titleRaw = (result as any)?.title as string | undefined;
+      const summaryRaw = (result as any)?.summary as string | undefined;
+      const tagsRaw = (result as any)?.tags as string[] | undefined;
+
+      const title = (titleRaw ?? '').split(/\s+/).slice(0, 10).join(' ').trim() || 'Conversation Summary';
+      const content = (summaryRaw ?? '').split(/\s+/).slice(0, 50).join(' ').trim() || 'No summary available.';
+      const tags = (tagsRaw && tagsRaw.length ? tagsRaw : ['conversation']).slice(0, 7);
+
+      // Save to Firestore if signed in
+      let saved = false;
+      if (user?.uid) {
+        try {
+          await createNote(user.uid, {
+            uid: user.uid,
+            title,
+            content,
+            tags,
+            category: 'conversation',
+            priority: 'medium',
+            isPinned: false,
+            isArchived: false,
+          });
+          saved = true;
+        } catch {
+          saved = false;
+        }
+      }
+
+      // Also surface to user
+      alert(user?.uid && saved ? 'Saved!' : 'Something went wrong');
     } catch (e) {
       // Best-effort; still reset
       console.warn('Summarize failed', e);
