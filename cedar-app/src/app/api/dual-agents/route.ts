@@ -18,9 +18,8 @@ interface AgentMessage {
 
 function isBracketOutputValid(text: string): boolean {
   if (!text) return false;
-  const toAndContent = /\[\s*To\s*:\s*(Ego|Superego|User)\s*\]\s*\[\s*Content\s*:\s*[\s\S]+\]/i;
-  const onlyContent = /\[\s*Content\s*:\s*[\s\S]+\]/i;
-  return toAndContent.test(text) || onlyContent.test(text);
+  const toAndContent = /\[\s*To\s*:\s*(Ego|Superego|User)\s*\]\s*\[\s*Content\s*:\s*[\s\S]*?\]/i;
+  return toAndContent.test(text);
 }
 
 function withAgentTag(msg: AgentMessage): string {
@@ -120,17 +119,15 @@ Grounding & continuity:
 - You will receive the prior conversation. Read it carefully, stay on topic, and maintain continuity with facts already stated.
 - If the User speaks, respond to the User first; otherwise consider the Superego's last point.
 
-Turn-taking:
-- One speaker at a time. If you direct your reply to someone, specify them in [To: ...].
-- If you do not direct your reply, omit [To: ...] and just provide [Content: ...].
-- When the other agent addresses you explicitly (their last message contains [To: Ego]), you MUST reply to them next and include [To: Superego|User] appropriately.
+ Turn-taking:
+ - One speaker at a time. You MUST specify a target in [To: ...] for every reply.
+ - When the other agent addresses you explicitly (their last message contains [To: Ego]), you MUST reply to them next and include [To: Superego|User] appropriately.
 - If the User hasn't replied for one full turn and your last message did not address anyone, hand off to the other agent at least every 2 turns by asking them ONE crisp question using [To: Superego].
 
-Output format (STRICT):
-- Respond ONLY in one of the following formats:
-  1) [To: Ego|Superego|User] [Content: <your reply>]
-  2) [Content: <your reply>]  // If and only if you are speaking to both agents (discussion), or continuing general reflection. If you are replying to the User or a specific agent, you MUST include [To: ...].
-- Do NOT include any greeting lines, role prefixes, or signatures outside the brackets.
+ Output format (STRICT):
+ - Always include an explicit target: [To: Ego|Superego|User] [Content: <NameOfAddressee>: <your reply>]
+   - If [To: User], prefix Content with "User: "; if [To: Ego], use "Ego: "; if [To: Superego], use "Superego: ".
+ - Do NOT include any greeting lines, role prefixes, or signatures outside the brackets.
 
 Length:
 - Keep replies concise: at most 30 words.
@@ -138,7 +135,7 @@ Length:
 Examples (do and don't):
 - Good: [To: User] [Content: Let’s focus on one small step you can try today.]
 - Good: [To: Superego] [Content: I’m concerned about feasibility—what value trade-offs do you see?]
-- Good: [Content: From a practical angle, we might test this idea before deciding.] // general discussion
+ - Good: [To: Superego] [Content: Superego: From a practical angle, we might test this idea before deciding.]
 - Bad: Ego: Hi there!
 - Bad: [Content: What would you like to discuss today?] // too generic; avoid placeholders
 
@@ -159,17 +156,15 @@ Grounding & continuity:
 - You will receive the prior conversation. Read it carefully, stay on topic, and maintain continuity with facts already stated.
 - If the User speaks, respond to the User first; otherwise consider the Ego's last point.
 
-Turn-taking:
-- One speaker at a time. If you direct your reply to someone, specify them in [To: ...].
-- If you do not direct your reply, omit [To: ...] and just provide [Content: ...].
-- When the other agent addresses you explicitly (their last message contains [To: Superego]), you MUST reply to them next and include [To: Ego|User] appropriately.
+ Turn-taking:
+ - One speaker at a time. You MUST specify a target in [To: ...] for every reply.
+ - When the other agent addresses you explicitly (their last message contains [To: Superego]), you MUST reply to them next and include [To: Ego|User] appropriately.
 - If the User hasn't replied for one full turn and your last message did not address anyone, hand off to the other agent at least every 2 turns by asking them ONE crisp question using [To: Ego].
 
-Output format (STRICT):
-- Respond ONLY in one of the following formats:
-  1) [To: Ego|Superego|User] [Content: <your reply>]
-  2) [Content: <your reply>]  // If and only if you are speaking to both agents (discussion), or continuing general reflection. If you are replying to the User or a specific agent, you MUST include [To: ...].
-- Do NOT include any greeting lines, role prefixes, or signatures outside the brackets.
+ Output format (STRICT):
+ - Always include an explicit target: [To: Ego|Superego|User] [Content: <NameOfAddressee>: <your reply>]
+   - If [To: User], prefix Content with "User: "; if [To: Ego], use "Ego: "; if [To: Superego], use "Superego: ".
+ - Do NOT include any greeting lines, role prefixes, or signatures outside the brackets.
 
 Length:
 - Keep replies concise: at most 30 words.
@@ -177,7 +172,7 @@ Length:
 Examples (do and don't):
 - Good: [To: User] [Content: Let’s align choices with what matters most to you.]
 - Good: [To: Ego] [Content: Values suggest clarity and honesty should guide next actions.]
-- Good: [Content: Ethically, transparency with yourself here seems important.] // general discussion
+ - Good: [To: Ego] [Content: Ego: Ethically, transparency with yourself here seems important.]
 - Bad: Superego: Hello!
 - Bad: [Content: What would you like to discuss today?] // too generic; avoid placeholders
 
@@ -243,9 +238,37 @@ export async function POST(req: NextRequest) {
       maxTurns = 100,
       startConversation = false,
       userInput = "",
+      summarize = false,
     } = body;
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    // 0. Summarize conversation
+    if (summarize) {
+      const transcript = (messages as AgentMessage[]).map((m) => {
+        const speaker = m.agent ? m.agent : m.role;
+        return `${speaker.toUpperCase()}: ${m.content}`;
+      }).join("\n");
+
+      const SUM_SYSTEM = `You summarize a dialogue between User, Ego, and Superego.
+Goal: a concise, useful recap a human can scan in under 150 words.
+Include:
+- Key themes & values
+- Decisions or recommendations
+- Next steps (1-3 bullets)
+Avoid chain-of-thought; write the final summary only.`;
+
+      const completion = await openai.chat.completions.create({
+        model: MODEL,
+        temperature: 0.3,
+        messages: [
+          { role: "system", content: SUM_SYSTEM },
+          { role: "user", content: `Summarize this conversation succinctly:\n\n${transcript}` },
+        ],
+      });
+      const summary = completion.choices?.[0]?.message?.content?.trim() ?? "";
+      return NextResponse.json({ ok: true, summary });
+    }
 
     // 1. Handle user input
     if (userInput && userInput.trim()) {
@@ -329,7 +352,7 @@ export async function POST(req: NextRequest) {
           model: MODEL,
           messages: [
             { role: "system", content: systemPrompt },
-            { role: "user", content: `Reformat this to STRICT bracket-only without adding new info. If target is not specified, output only [Content: ...]. Text: ${content}` },
+            { role: "user", content: `Reformat to STRICT: Always produce [To: Ego|Superego|User] [Content: <AddresseeName>: <reply>] with no extra text. Original: ${content}` },
           ],
           temperature: 0.2,
         });
@@ -378,7 +401,7 @@ export async function POST(req: NextRequest) {
           model: MODEL,
           messages: [
             { role: "system", content: systemPrompt },
-            { role: "user", content: `Reformat this to STRICT bracket-only without adding new info. If target is not specified, output only [Content: ...]. Text: ${content}` },
+            { role: "user", content: `Reformat to STRICT: Always produce [To: Ego|Superego|User] [Content: <AddresseeName>: <reply>] with no extra text. Original: ${content}` },
           ],
           temperature: 0.2,
         });
@@ -437,7 +460,7 @@ export async function POST(req: NextRequest) {
         model: MODEL,
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Reformat this to STRICT bracket-only without adding new info. If target is not specified, output only [Content: ...]. Text: ${content}` },
+          { role: "user", content: `Reformat to STRICT: Always produce [To: Ego|Superego|User] [Content: <AddresseeName>: <reply>] with no extra text. Original: ${content}` },
         ],
         temperature: 0.2,
       });

@@ -15,6 +15,7 @@ import {
   continueDualAgents,
   sendUserToDualAgents,
   startDualAgents,
+  summarizeConversation,
 } from '@/lib/dualAgentsClient';
 
 interface TriadInterfaceProps {
@@ -56,6 +57,21 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
     isRunning: false,
     conversationComplete: false,
   });
+
+  // Keep latest conversation in a ref to avoid stale closures in timers/async fns
+  const conversationRef = useRef<ConversationState>(
+    {
+      messages: [],
+      currentAgent: "ego",
+      turnCount: 0,
+      maxTurns: 100,
+      isRunning: false,
+      conversationComplete: false,
+    }
+  );
+  useEffect(() => {
+    conversationRef.current = conversation;
+  }, [conversation]);
 
   // Cedar store integration for messages and human-in-the-loop markers
   const store = useCedarStore((state) => state);
@@ -123,41 +139,57 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
     []
   );
 
-  // Parse designated output format: [To: ...] optional + [Content: ...] or raw text
+  // Helper: count trailing assistant turns since last user message
+  const assistantStreakSinceLastUser = (msgs: AgentMessage[]): number => {
+    let count = 0;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (m.role === 'user' || m.agent === 'user') break;
+      if (m.role === 'assistant') count++;
+    }
+    return count;
+  };
+
+  // Decide if we should pause for user instead of auto-continuing
+  const shouldPauseForUser = (to: AgentRole | undefined, msgsAfter: AgentMessage[]): boolean => {
+    if (to === 'user') return true;
+    return false;
+  };
+
+  // Occasionally allow a single interjection after [To: User]
+  const chooseInterjectionAgent = (
+    lastAssistant: Exclude<AgentRole, 'user'> | undefined,
+    to: AgentRole | undefined,
+    streakSinceUser: number
+  ): Exclude<AgentRole, 'user'> | undefined => {
+    if (!lastAssistant) return undefined;
+    // Only consider interjection when the last message targeted the user
+    if (to !== 'user') return undefined;
+    // Allow at most one EXTRA assistant reply after the user-targeted message (so streak < 2)
+    if (streakSinceUser >= 2) return undefined;
+    const rand = Math.random();
+    const pick = rand < 0.35 ? (lastAssistant === 'ego' ? 'superego' : 'ego') : undefined;
+    console.log('[Triad][interject][decision]', { to, streakSinceUser, lastAssistant, rand: rand.toFixed(2), pick });
+    if (pick) return pick;
+    return undefined;
+  };
+
+  // Parse designated output format anywhere in the string: [To: ...] + [Content: ...]
   const parseDesignatedFormat = (raw: string): { to?: AgentRole; content: string } => {
     if (!raw) return { content: '' };
-    const bracketMatches = raw.match(/^\s*(\[[^\]]+\])\s*(\[[^\]]+\])?\s*([\s\S]*)$/);
     let to: AgentRole | undefined;
     let content = raw.trim();
-    if (bracketMatches) {
-      const first = bracketMatches[1] ?? '';
-      const second = bracketMatches[2] ?? '';
-      // Determine which bracket holds To vs Content
-      const toBracket = /\[\s*To\s*:\s*([^\]]+)\]/i.test(first)
-        ? first
-        : /\[\s*To\s*:\s*([^\]]+)\]/i.test(second)
-        ? second
-        : undefined;
-      const contentBracket = /\[\s*Content\s*:\s*([\s\S]*?)\]/i.test(first)
-        ? first
-        : /\[\s*Content\s*:\s*([\s\S]*?)\]/i.test(second)
-        ? second
-        : undefined;
-      if (toBracket) {
-        const m = toBracket.match(/\[\s*To\s*:\s*([^\]]+)\]/i);
-        const val = (m?.[1] ?? '').trim().toLowerCase();
-        if (val === 'superego') to = 'superego';
-        else if (val === 'ego') to = 'ego';
-        else if (val === 'user') to = 'user';
-      }
-      if (contentBracket) {
-        const m = contentBracket.match(/\[\s*Content\s*:\s*([\s\S]*?)\]/i);
-        content = (m?.[1] ?? '').trim();
-      } else {
-        // If no explicit content bracket, remove any leading bracket tokens and keep rest
-        const rest = raw.replace(/^\s*\[[^\]]+\]\s*/, '').trim();
-        content = rest || raw.trim();
-      }
+    const toMatch = raw.match(/\[\s*To\s*:\s*(Ego|Superego|User)\s*\]/i);
+    if (toMatch) {
+      const val = (toMatch[1] || '').toLowerCase();
+      if (val === 'ego' || val === 'superego' || val === 'user') to = val as AgentRole;
+    }
+    const contentMatch = raw.match(/\[\s*Content\s*:\s*([\s\S]*?)\]/i);
+    if (contentMatch) {
+      content = (contentMatch[1] || '').trim();
+    } else {
+      // Fallback: strip any leading bracket tokens like [AGENT:...] and keep remainder text
+      content = raw.replace(/^(?:\s*\[[^\]]+\])+\s*/, '').trim();
     }
     return { to, content };
   };
@@ -202,23 +234,20 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
         }
         rotateToNodeId(agentToNodeId[to]);
       }
-      // 1) Rotate to current speaker first
-      if (data.agent) rotateToNodeId(agentToNodeId[data.agent]);
-      // 2) After 2s, rotate to addressed target if present
-      await new Promise((r) => setTimeout(r, 2000));
-      if (to) {
-        console.log('[Triad][continue] rotating to target', to);
-        if (isAnimating) {
-          await new Promise((r) => setTimeout(r, 400));
-        }
-        rotateToNodeId(agentToNodeId[to]);
-      }
-      // 3) After initial message, if still running and not complete, delay 3s then continue
+      // 3) After initial message, decide whether to pause for user or continue (allow possible interjection)
       if (!data.conversationComplete) {
-        await new Promise((r) => setTimeout(r, 3000));
-        const nextOverride = (to === 'ego' || to === 'superego') ? (to as Exclude<AgentRole, 'user'>) : undefined;
-        if (nextOverride) console.log('[Triad][thinking][schedule] next agent:', nextOverride);
-        await continueConversation(nextOverride);
+        const msgsAfter = [normalized];
+        const streak = assistantStreakSinceLastUser(msgsAfter);
+        const interject = chooseInterjectionAgent(data.agent as any, to, streak);
+        if (shouldPauseForUser(to, msgsAfter) && !interject) {
+          setConversation((prev) => ({ ...prev, isRunning: false }));
+        } else {
+          await new Promise((r) => setTimeout(r, 3000));
+          const nextOverride = interject ?? ((to === 'ego' || to === 'superego') ? (to as Exclude<AgentRole, 'user'>) : undefined);
+          if (interject) console.log('[Triad][interject] allowing', interject);
+          if (nextOverride) console.log('[Triad][thinking][schedule] next agent:', nextOverride);
+          await continueConversation(nextOverride);
+        }
       }
     } finally {
       setIsLoading(false);
@@ -226,16 +255,17 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
   };
 
   const continueConversation = async (overrideAgent?: Exclude<AgentRole, 'user'>) => {
-    if (conversation.conversationComplete || !conversation.isRunning) return;
-    const thinking = overrideAgent ?? conversation.currentAgent;
+    const snapshot = conversationRef.current;
+    if (snapshot.conversationComplete || !snapshot.isRunning) return;
+    const thinking = overrideAgent ?? snapshot.currentAgent;
     console.log('[Triad][thinking] agent:', thinking);
     setIsLoading(true);
     try {
       const data = await continueDualAgents({
-        messages: conversation.messages,
-        currentAgent: overrideAgent ?? conversation.currentAgent,
-        turnCount: conversation.turnCount,
-        maxTurns: conversation.maxTurns,
+        messages: snapshot.messages,
+        currentAgent: overrideAgent ?? snapshot.currentAgent,
+        turnCount: snapshot.turnCount,
+        maxTurns: snapshot.maxTurns,
       });
       if ((data as any)?.error) return;
       // Decide next speaker based on [To] or alternate if missing; store normalized content
@@ -252,12 +282,20 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
       store.addMessage?.({ role: 'assistant', type: 'text', content });
       if (to) rotateToNodeId(agentToNodeId[to]);
       else if (data.agent) rotateToNodeId(agentToNodeId[data.agent]);
-      if (!data.conversationComplete && conversation.isRunning) {
-        await new Promise((r) => setTimeout(r, 3000));
-        const nextTarget: AgentRole | undefined = to;
-        if (nextTarget === 'ego' || nextTarget === 'superego' || !nextTarget) {
-          if (nextTarget) console.log('[Triad][thinking][schedule] next agent:', nextTarget);
-          await continueConversation(nextTarget as Exclude<AgentRole, 'user'> | undefined);
+      if (!data.conversationComplete && conversationRef.current.isRunning) {
+        const msgsAfter = [...snapshot.messages, normalized];
+        const streak = assistantStreakSinceLastUser(msgsAfter);
+        const interject = chooseInterjectionAgent(data.agent as any, to, streak);
+        if (shouldPauseForUser(to, msgsAfter) && !interject) {
+          setConversation((prev) => ({ ...prev, isRunning: false }));
+        } else {
+          await new Promise((r) => setTimeout(r, 3000));
+          const nextTarget: AgentRole | undefined = interject ?? to;
+          if (nextTarget === 'ego' || nextTarget === 'superego' || !nextTarget) {
+            if (interject) console.log('[Triad][interject] allowing', interject);
+            if (nextTarget) console.log('[Triad][thinking][schedule] next agent:', nextTarget);
+            await continueConversation(nextTarget as Exclude<AgentRole, 'user'> | undefined);
+          }
         }
       }
     } finally {
@@ -325,15 +363,21 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
 
       store.addMessage?.({ role: 'assistant', type: 'text', content });
 
-      if (!data.conversationComplete && conversation.isRunning) {
-        await new Promise((r) => setTimeout(r, 3000));
-        if (to === 'ego' || to === 'superego' || !to) {
-          if (to) console.log('[Triad][thinking][schedule] next agent:', to);
-          await continueConversation(to as Exclude<AgentRole, 'user'> | undefined);
-        } else if (to === 'user') {
-          const nextOverride: Exclude<AgentRole, 'user'> = (data.agent === 'ego' ? 'superego' : 'ego');
-          console.log('[Triad][thinking][schedule] inter-agent follow-up agent:', nextOverride);
-          await continueConversation(nextOverride);
+      if (!data.conversationComplete && conversationRef.current.isRunning) {
+        const msgsAfter = [...conversation.messages, userMsg, normalized];
+        const streak = assistantStreakSinceLastUser(msgsAfter);
+        const interject = chooseInterjectionAgent(data.agent as any, to, streak);
+        if (shouldPauseForUser(to, msgsAfter) && !interject) {
+          setConversation((prev) => ({ ...prev, isRunning: false }));
+        } else {
+          if (continueTimerRef.current) clearTimeout(continueTimerRef.current);
+          const nextOverride = interject ?? ((to === 'ego' || to === 'superego') ? (to as Exclude<AgentRole, 'user'>) : undefined);
+          continueTimerRef.current = setTimeout(() => {
+            if (!conversationRef.current.isRunning) return;
+            if (interject) console.log('[Triad][interject] allowing', interject);
+            console.log('[Triad][thinking][schedule] next agent:', nextOverride ?? conversationRef.current.currentAgent);
+            void continueConversation(nextOverride);
+          }, 3000);
         }
       }
       setUserInput("");
@@ -360,7 +404,18 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
     continueTimerRef.current = setTimeout(() => continueConversation(), 100);
   };
 
-  const resetConversation = () => {
+  const endAndSave = async () => {
+    // Summarize current messages (excluding system-only fields if any)
+    try {
+      const result = await summarizeConversation({ messages: conversation.messages });
+      const summary = (result as any)?.summary || 'No summary available.';
+      // Show summary inline above the transcript for now
+      alert(summary);
+    } catch (e) {
+      // Best-effort; still reset
+      console.warn('Summarize failed', e);
+    }
+
     if (continueTimerRef.current) {
       clearTimeout(continueTimerRef.current);
       continueTimerRef.current = null;
@@ -420,11 +475,12 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
                 </button>
               )}
               <button
-                onClick={resetConversation}
+                onClick={endAndSave}
                 className="flex items-center gap-2 px-3 py-1.5 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+                title="Summarize conversation, then reset"
               >
                 <RotateCcw className="w-4 h-4" />
-                Reset
+                End & Save
               </button>
               {/* Turn counter removed per requirement */}
             </Container3D>
@@ -542,7 +598,7 @@ export default function TriadInterface({ className }: TriadInterfaceProps) {
           </div>
         </div>
         {/* Sidebar transcript */}
-        <div className="absolute right-4 top-24 bottom-6 w-[20rem] pointer-events-auto">
+        <div className="absolute right-8 top-24 bottom-6 w-[20rem] pointer-events-auto">
           <Container3D className="h-full p-3 text-sm flex flex-col">
             <div className="font-semibold mb-2 flex-shrink-0">Conversation</div>
             <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-2">
