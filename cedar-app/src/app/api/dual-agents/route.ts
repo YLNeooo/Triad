@@ -251,23 +251,34 @@ export async function POST(req: NextRequest) {
       }).join("\n");
 
       const SUM_SYSTEM = `You summarize a dialogue between User, Ego, and Superego.
-Goal: a concise, useful recap a human can scan in under 150 words.
-Include:
-- Key themes & values
-- Decisions or recommendations
-- Next steps (1-3 bullets)
-Avoid chain-of-thought; write the final summary only.`;
+Return STRICT JSON with keys: { "title": string <= 10 words, "summary": string <= 50 words, "tags": string[3..7] }.
+No extra text.
+Guidance:
+- title: a concise 10-word max headline
+- summary: <= 50 words, readable
+- tags: 3-7 short key takeaways (no punctuation)\n`;
 
       const completion = await openai.chat.completions.create({
         model: MODEL,
         temperature: 0.3,
         messages: [
           { role: "system", content: SUM_SYSTEM },
-          { role: "user", content: `Summarize this conversation succinctly:\n\n${transcript}` },
+          { role: "user", content: `Summarize this conversation succinctly as STRICT JSON only:\n\n${transcript}` },
         ],
       });
-      const summary = completion.choices?.[0]?.message?.content?.trim() ?? "";
-      return NextResponse.json({ ok: true, summary });
+      const text = completion.choices?.[0]?.message?.content?.trim() ?? "";
+      let title: string | undefined;
+      let summary: string | undefined;
+      let tags: string[] | undefined;
+      try {
+        const json = JSON.parse(text);
+        title = typeof json?.title === 'string' ? json.title : undefined;
+        summary = typeof json?.summary === 'string' ? json.summary : undefined;
+        tags = Array.isArray(json?.tags) ? json.tags.filter((t: any) => typeof t === 'string') : undefined;
+      } catch {
+        summary = text; // fallback to raw text
+      }
+      return NextResponse.json({ ok: true, title, summary, tags });
     }
 
     // 1. Handle user input
