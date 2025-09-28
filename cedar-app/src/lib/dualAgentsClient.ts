@@ -11,6 +11,12 @@ export interface AgentMessage {
 
 export type DualAgentsResponse = AgentMessage & { userMessage?: AgentMessage; error?: string };
 
+export type UserNoteBrief = {
+  title: string;
+  content: string;
+  createdAt: string; // ISO string
+};
+
 async function postJSON<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
     method: 'POST',
@@ -21,10 +27,13 @@ async function postJSON<T>(url: string, body: unknown): Promise<T> {
   return data;
 }
 
-export async function startDualAgents(params: { maxTurns: number }): Promise<DualAgentsResponse> {
+export async function startDualAgents(params: { maxTurns: number; userName?: string; userMbti?: string; userNotes?: UserNoteBrief[] }): Promise<DualAgentsResponse> {
   return postJSON<DualAgentsResponse>('/api/dual-agents', {
     startConversation: true,
     maxTurns: params.maxTurns,
+    userName: params.userName,
+    userMbti: params.userMbti,
+    userNotes: params.userNotes,
   });
 }
 
@@ -33,6 +42,9 @@ export async function continueDualAgents(params: {
   currentAgent: Exclude<AgentRole, 'user'>;
   turnCount: number;
   maxTurns: number;
+  userName?: string;
+  userMbti?: string;
+  userNotes?: UserNoteBrief[];
 }): Promise<DualAgentsResponse> {
   return postJSON<DualAgentsResponse>('/api/dual-agents', params);
 }
@@ -43,6 +55,9 @@ export async function sendUserToDualAgents(params: {
   turnCount: number;
   maxTurns: number;
   userInput: string;
+  userName?: string;
+  userMbti?: string;
+  userNotes?: UserNoteBrief[];
 }): Promise<DualAgentsResponse> {
   return postJSON<DualAgentsResponse>('/api/dual-agents', params);
 }
