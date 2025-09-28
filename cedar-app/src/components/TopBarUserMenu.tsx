@@ -82,6 +82,13 @@ export default function TopBarUserMenu() {
               >
                 Edit MBTI
               </Link>
+              <Link
+                href="/test-notes"
+                className="block rounded-lg px-3 py-2 hover:bg-white/10"
+                role="menuitem"
+              >
+                View Notes
+              </Link>
               <button
                 onClick={async () => {
                   await signOut(auth);
