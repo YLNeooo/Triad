@@ -1,4 +1,5 @@
 "use client";
+
 import React from "react";
 import styles from "./page.module.css";
 import TriadBackground from "@/cedar/components/backgrounds/Background";
@@ -115,7 +116,7 @@ const MBTI_NOTES: NotePair[] = [
 
 /** ---------- Page ---------- */
 export default function BoardingPage() {
-  const { user, loading } = useAuth();
+  const { user } = useAuth();
   const router = useRouter();
   const [isFirst, setIsFirst] = React.useState<boolean[]>(() => {
     if (typeof window !== "undefined") {
@@ -152,6 +153,13 @@ export default function BoardingPage() {
 
   const handleContinue = async () => {
     if (saving) return;
+
+    // basic validation
+    if (!firstName.trim() || !lastName.trim()) {
+      alert("Please enter your first and last name.");
+      return;
+    }
+
     setSaving(true);
 
     // Build MBTI string in EI-SN-TF-JP order
@@ -170,13 +178,15 @@ export default function BoardingPage() {
     });
 
     try {
-      // still keep local backup if you want
+      // local backup
+      localStorage.setItem("firstName", firstName.trim());
+      localStorage.setItem("lastName", lastName.trim());
       localStorage.setItem("mbti", letters);
       localStorage.setItem("mbtiDetail", JSON.stringify(detail));
 
       // must be signed in to write to Firestore
       if (!user) {
-        alert("Please sign in to save your MBTI.");
+        alert("Please sign in to save your profile.");
         router.push("/login");
         return;
       }
@@ -185,24 +195,25 @@ export default function BoardingPage() {
       await setDoc(
         doc(db, "users", user.uid),
         {
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
           mbti: letters,
-          mbtiDetail: detail,      // array of { dimension, chosen, other }
+          mbtiDetail: detail, // array of { dimension, chosen, other }
           mbtiUpdatedAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         },
         { merge: true }
       );
 
-      // notify in-app can delete
+      // notify in-app if anything is listening
       window.dispatchEvent(
         new CustomEvent("mbti:selected", { detail: { mbti: letters, detail } })
       );
 
-      // alert(`Saved your MBTI: ${letters}`);
       router.push("/dashboard");
     } catch (e) {
-      console.error("Failed to save MBTI:", e);
-      alert("Failed to save MBTI. Please try again.");
+      console.error("Failed to save MBTI/profile:", e);
+      alert("Failed to save. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -216,6 +227,50 @@ export default function BoardingPage() {
     >
       <main className={`${styles.main} relative z-10`}>
         <div className={styles.wrap}>
+          {/* Name inputs */}
+          <div className="w-full max-w-2xl mx-auto mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label className="block">
+              <span className="mb-1 block text-white/80">First name</span>
+              <input
+                id="firstName"
+                type="text"
+                inputMode="text"
+                autoComplete="given-name"
+                placeholder=""
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                className="w-full rounded-xl px-4 py-3
+                           bg-white/10 backdrop-blur-md
+                           border border-white/20
+                           text-white placeholder-white/60
+                           outline-none
+                           focus:border-cyan-300/60
+                           transition"
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-white/80">Last name</span>
+              <input
+                id="lastName"
+                type="text"
+                inputMode="text"
+                autoComplete="family-name"
+                placeholder=""
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                className="w-full rounded-xl px-4 py-3
+                           bg-white/10 backdrop-blur-md
+                           border border-white/20
+                           text-white placeholder-white/60
+                           outline-none
+                           focus:border-cyan-300/60
+                           transition"
+              />
+            </label>
+          </div>
+
+          {/* Notes grid */}
           <div className={styles.notesRow}>
             {MBTI_NOTES.map((pair, i) => (
               <NoteCard
@@ -229,18 +284,19 @@ export default function BoardingPage() {
 
           {/* Button section */}
           <div className="mt-8 flex flex-col items-center gap-4">
-            {/* Continue button */}
+            {/* Continue button (crystal style) */}
             <button
               onClick={handleContinue}
-              disabled={saving}
+              disabled={saving || !firstName.trim() || !lastName.trim()}
               className="relative px-6 py-3 rounded-xl 
                          bg-white/10 backdrop-blur-md
                          border border-white/20
                          shadow-[0_0_20px_rgba(173,216,230,0.4)]
-                         text-cyan-200 font-semibold
+                         text-cyan-200
                          transition-all duration-300
                          hover:bg-white/20 hover:scale-105
-                         active:scale-95"
+                         active:scale-95
+                         disabled:opacity-60 disabled:pointer-events-none"
             >
               {saving ? "Saving…" : "Continue"}
               <span
@@ -259,7 +315,7 @@ export default function BoardingPage() {
                          bg-white/10 backdrop-blur-md
                          border border-white/20
                          shadow-[0_0_20px_rgba(173,216,230,0.4)]
-                         text-cyan-200 font-semibold
+                         text-cyan-200
                          transition-all duration-300
                          hover:bg-white/20 hover:scale-105
                          active:scale-95"
@@ -298,9 +354,9 @@ function NoteCard({
 
   const onFlipEnd = () => {
     if (!flipping) return;
-    onFlip();
+    onFlip();              // swap which side is logically front
     setFlipping(false);
-    setResetting(true);
+    setResetting(true);    // snap back to 0deg instantly to avoid double spin
   };
 
   React.useEffect(() => {
