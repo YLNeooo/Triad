@@ -221,7 +221,7 @@ export default function BoardingPage() {
                 type="text"
                 inputMode="text"
                 autoComplete="given-name"
-                placeholder="Ada"
+                placeholder=""
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
                 className="w-full rounded-xl px-4 py-3
@@ -241,7 +241,7 @@ export default function BoardingPage() {
                 type="text"
                 inputMode="text"
                 autoComplete="family-name"
-                placeholder="Lovelace"
+                placeholder=""
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 className="w-full rounded-xl px-4 py-3
