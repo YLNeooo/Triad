@@ -1,4 +1,4 @@
-This project is completed in a hackathon: HackGT 12 and my teammates are Patrick Ying, Thomas Guo, and Ivan Li.
+This project is submitted to HackGT 12 (teammates: Patrick Ying, Thomas Guo, and Ivan Li)
 
 # Vision:
 
