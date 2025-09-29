@@ -1,3 +1,5 @@
+This project is completed in a hackathon: HackGT 12 and my teammates are Patrick Ying, Thomas Guo, and Ivan Li.
+
 # Vision:
 
 Taking inspiration from Sigmund Freud’s psychoanalysis, our app offers a sacred space for self-exploration and inner peace. Through intimate dialogue with AI Agents embodying the Ego and Superego, users are invited into a symbolic *roundtable of the mind* — an intimate yet private chit chat where thoughts, troubles, and desires are laid bare. In this triadic conversation, healing begins, clarity emerges, and the journey toward self-understanding unfolds.
